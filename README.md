@@ -1,26 +1,17 @@
-# Spotify Translator Android
+# Spotify Translator Android FULL V2 Fixed
 
-This is a buildable native Android starter app for a Spotify lyric translator.
+Complete buildable Android project.
 
-## What works now
+Features:
+- Spotify OAuth PKCE login.
+- Redirect URI: `spotifytranslator://callback`
+- Current playing Spotify track lookup.
+- Manual artist/song fallback.
+- Lyrics lookup using lyrics.ovh.
+- Translation using MyMemory public translation API.
+- GitHub Actions APK build.
 
-- Opens as an Android app.
-- Shows a Spotify Translator screen.
-- Has an Open Spotify button.
-- Builds a debug APK using GitHub Actions.
+Client ID:
+`6752064dce5f4943bdb9343ffd09ff90`
 
-## What is not implemented yet
-
-The original `atahanuz/spotify-translator` project is Python/Tkinter and uses a Spotify web cookie approach. That is not suitable for a proper Android APK.
-
-Needed next:
-1. Spotify OAuth PKCE login.
-2. Spotify Web API currently-playing endpoint.
-3. A lyrics backend/proxy.
-4. Translation provider integration.
-
-## Build APK on GitHub
-
-Go to **Actions > Build Android APK > Run workflow**.
-
-Download the APK from the workflow **Artifacts** section after the build finishes.
+Upload the **contents** of this ZIP to the repository root, not the folder itself.
