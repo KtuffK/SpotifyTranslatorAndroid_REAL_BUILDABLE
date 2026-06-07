@@ -442,7 +442,7 @@ public class MainActivity extends Activity {
         BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
         StringBuilder sb = new StringBuilder();
         String line;
-        while ((line = reader.readLine()) != null) sb.append(line).append("\\n");
+        while ((line = reader.readLine()) != null) sb.append(line);
         return sb.toString();
     }
 
