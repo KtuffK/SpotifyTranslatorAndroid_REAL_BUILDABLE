@@ -356,10 +356,44 @@ public class MainActivity extends Activity {
     }
 
     private String fetchLyrics(String artist, String song) throws Exception {
-        JSONObject obj = new JSONObject(httpGet("https://api.lyrics.ovh/v1/" + enc(artist) + "/" + enc(song)));
-        String lyrics = obj.optString("lyrics", "").trim();
-        if (lyrics.isEmpty()) throw new Exception("No lyrics found.");
-        return lyrics;
+        String[] tries = buildTitleTries(song);
+        Exception last = null;
+
+        for (String title : tries) {
+            try {
+                JSONObject obj = new JSONObject(httpGet("https://api.lyrics.ovh/v1/" + enc(artist) + "/" + enc(title)));
+                String lyrics = obj.optString("lyrics", "").trim();
+                if (!lyrics.isEmpty()) return lyrics;
+            } catch (Exception e) {
+                last = e;
+            }
+        }
+
+        throw new Exception("No lyrics found after trying: " + String.join(", ", tries));
+    }
+
+    private String[] buildTitleTries(String song) {
+        String cleaned = song
+                .replaceAll("\\(.*?\\)", "")
+                .replaceAll("\\[.*?\\]", "")
+                .replace(" - Remastered", "")
+                .replace(" - Explicit", "")
+                .trim();
+
+        if (song.equals("กรุงเทพมหานคร") || cleaned.equals("กรุงเทพมหานคร")) {
+            return new String[]{
+                    song,
+                    cleaned,
+                    "Bangkok",
+                    "Krung Thep Maha Nakhon",
+                    "Krung Thep",
+                    "Bangkok City"
+            };
+        }
+
+        if (!cleaned.equals(song)) return new String[]{song, cleaned};
+
+        return new String[]{song};
     }
 
     private String translateText(String text, String targetLang) throws Exception {
