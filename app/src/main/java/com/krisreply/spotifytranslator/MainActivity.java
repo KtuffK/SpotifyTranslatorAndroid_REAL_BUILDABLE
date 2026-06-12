@@ -78,6 +78,7 @@ public class MainActivity extends Activity {
         handleIncomingIntent(getIntent());
         updateLoginState();
         requestNotificationAccessOnce();
+        requestNotificationAccessOnce();
     }
 
     @Override
