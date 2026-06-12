@@ -77,6 +77,7 @@ public class MainActivity extends Activity {
         buildUi();
         handleIncomingIntent(getIntent());
         updateLoginState();
+        requestNotificationAccessOnce();
     }
 
     @Override
@@ -110,17 +111,9 @@ public class MainActivity extends Activity {
         loginButton.setOnClickListener(v -> startSpotifyLogin());
         root.addView(loginButton);
 
-        Button currentButton = button("Use currently playing Spotify track");
-        currentButton.setOnClickListener(v -> getCurrentPlayingAndTranslate());
-        root.addView(currentButton);
-
         Button notifButton = button("Use Spotify notification fallback");
         notifButton.setOnClickListener(v -> useSpotifyNotificationFallback());
         root.addView(notifButton);
-
-        Button notifSettingsButton = button("Enable notification access");
-        notifSettingsButton.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
-        root.addView(notifSettingsButton);
 
         artistInput = input("Artist, e.g. Oasis");
         titleInput = input("Song title, e.g. Wonderwall");
@@ -196,6 +189,17 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
         return e;
+    }
+
+    private void requestNotificationAccessOnce() {
+        boolean asked = prefs().getBoolean("notification_access_asked", false);
+        if (!asked) {
+            prefs().edit().putBoolean("notification_access_asked", true).apply();
+            statusText.setText("Please enable notification access for Spotify Translator.");
+            try {
+                startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
+            } catch (Exception ignored) {}
+        }
     }
 
     private SharedPreferences prefs() {
@@ -362,7 +366,7 @@ public class MainActivity extends Activity {
                 main.post(() -> {
                     updateLoginState();
                     statusText.setText("Spotify login complete.");
-                    outputText.setText("Now tap: Use currently playing Spotify track.");
+                    outputText.setText("Now use Spotify share link, manual search, or notification fallback.");
                 });
             } catch (Exception e) {
                 main.post(() -> {
