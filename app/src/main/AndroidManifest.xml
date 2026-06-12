@@ -36,7 +36,6 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="open.spotify.com" android:pathPrefix="/track" />
             </intent-filter>
-
         </activity>
 
         <service
@@ -48,5 +47,6 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
     </application>
 </manifest>
