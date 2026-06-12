@@ -50,6 +50,7 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private TextView outputText;
     private TextView loginText;
+    private String lastTranslationTargetName = "";
 
     private String accessToken = "";
     private String codeVerifier = "";
@@ -455,12 +456,24 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 String lyrics = fetchLyrics(artist, song);
-                main.post(() -> statusText.setText("Translating..."));
-                String translated = translateLongText(lyrics, target);
+
+                boolean sourceLooksThai = containsThai(lyrics);
+                String actualTarget = target;
+                String actualTargetName = LANGS[idx][0];
+
+                if (sourceLooksThai && "th".equals(target)) {
+                    actualTarget = "en";
+                    actualTargetName = "English";
+                }
+
+                String sourceLang = sourceLooksThai ? "th" : "en";
+
+                main.post(() -> statusText.setText("Translating " + sourceLang.toUpperCase() + " → " + actualTargetName + "..."));
+                String translated = translateLongText(lyrics, sourceLang, actualTarget);
 
                 String result = "TRACK\n" + artist + " - " + song
                         + "\n\nORIGINAL LYRICS\n\n" + lyrics
-                        + "\n\n\nTRANSLATED (" + LANGS[idx][0] + ")\n\n" + translated;
+                        + "\n\n\nTRANSLATED (" + actualTargetName + ")\n\n" + translated;
 
                 main.post(() -> {
                     statusText.setText("Done.");
@@ -546,7 +559,21 @@ public class MainActivity extends Activity {
         return new String[]{song};
     }
 
-    private String translateLongText(String text, String targetLang) throws Exception {
+    private boolean containsThai(String text) {
+        if (text == null || text.isEmpty()) return false;
+        int thai = 0;
+        int letters = 0;
+
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (Character.isLetter(c)) letters++;
+            if (c >= '\u0E00' && c <= '\u0E7F') thai++;
+        }
+
+        return thai > 5 && thai >= Math.max(3, letters / 5);
+    }
+
+    private String translateLongText(String text, String sourceLang, String targetLang) throws Exception {
         String clean = text == null ? "" : text.trim();
         if (clean.isEmpty()) throw new Exception("No lyrics to translate.");
 
@@ -557,7 +584,7 @@ public class MainActivity extends Activity {
         for (String line : lines) {
             if (chunk.length() + line.length() + 1 > 450) {
                 if (chunk.length() > 0) {
-                    out.append(translateText(chunk.toString(), targetLang)).append("\n\n");
+                    out.append(translateText(chunk.toString(), sourceLang, targetLang)).append("\n\n");
                     chunk.setLength(0);
                 }
             }
@@ -565,15 +592,17 @@ public class MainActivity extends Activity {
         }
 
         if (chunk.length() > 0) {
-            out.append(translateText(chunk.toString(), targetLang));
+            out.append(translateText(chunk.toString(), sourceLang, targetLang));
         }
 
         return out.toString().trim();
     }
 
-    private String translateText(String text, String targetLang) throws Exception {
+    private String translateText(String text, String sourceLang, String targetLang) throws Exception {
+        if (sourceLang.equals(targetLang)) return text;
+
         JSONObject obj = new JSONObject(httpGet("https://api.mymemory.translated.net/get?q=" + enc(text)
-                + "&langpair=en|" + enc(targetLang)));
+                + "&langpair=" + enc(sourceLang + "|" + targetLang)));
         JSONObject data = obj.optJSONObject("responseData");
         if (data == null) throw new Exception("No translation response.");
         String translated = data.optString("translatedText", "").trim();
