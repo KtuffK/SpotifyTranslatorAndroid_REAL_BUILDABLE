@@ -19,6 +19,7 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.provider.Settings;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -112,6 +113,14 @@ public class MainActivity extends Activity {
         Button currentButton = button("Use currently playing Spotify track");
         currentButton.setOnClickListener(v -> getCurrentPlayingAndTranslate());
         root.addView(currentButton);
+
+        Button notifButton = button("Use Spotify notification fallback");
+        notifButton.setOnClickListener(v -> useSpotifyNotificationFallback());
+        root.addView(notifButton);
+
+        Button notifSettingsButton = button("Enable notification access");
+        notifSettingsButton.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)));
+        root.addView(notifSettingsButton);
 
         artistInput = input("Artist, e.g. Oasis");
         titleInput = input("Song title, e.g. Wonderwall");
@@ -222,8 +231,23 @@ public class MainActivity extends Activity {
     }
 
     private void handleIncomingIntent(Intent intent) {
-        if (intent == null || intent.getData() == null) return;
+        if (intent == null) return;
+
+        if (Intent.ACTION_SEND.equals(intent.getAction())) {
+            String shared = intent.getStringExtra(Intent.EXTRA_TEXT);
+            if (shared != null) handleSpotifySharedText(shared);
+            return;
+        }
+
         Uri data = intent.getData();
+        if (data == null) return;
+
+        String url = data.toString();
+        if (url.contains("open.spotify.com/track/")) {
+            handleSpotifySharedText(url);
+            return;
+        }
+
         if (!"spotifytranslator".equals(data.getScheme())) return;
 
         String error = data.getQueryParameter("error");
@@ -235,6 +259,84 @@ public class MainActivity extends Activity {
 
         String code = data.getQueryParameter("code");
         if (code != null && !code.isEmpty()) exchangeCodeForToken(code);
+    }
+
+    private void handleSpotifySharedText(String shared) {
+        try {
+            String id = extractSpotifyTrackId(shared);
+            if (id.isEmpty()) {
+                statusText.setText("Spotify link not recognised.");
+                outputText.setText(shared);
+                return;
+            }
+            getSpotifyTrackById(id);
+        } catch (Exception e) {
+            statusText.setText("Spotify share failed.");
+            outputText.setText(e.getMessage());
+        }
+    }
+
+    private String extractSpotifyTrackId(String text) {
+        if (text == null) return "";
+        int i = text.indexOf("open.spotify.com/track/");
+        if (i < 0) return "";
+        String part = text.substring(i + "open.spotify.com/track/".length());
+        int q = part.indexOf("?");
+        if (q >= 0) part = part.substring(0, q);
+        int space = part.indexOf(" ");
+        if (space >= 0) part = part.substring(0, space);
+        return part.trim();
+    }
+
+    private void getSpotifyTrackById(String id) {
+        if (accessToken == null || accessToken.isEmpty()) {
+            statusText.setText("Login with Spotify first, then share the track again.");
+            return;
+        }
+
+        statusText.setText("Reading Spotify shared track...");
+        executor.execute(() -> {
+            try {
+                String json = spotifyGet("https://api.spotify.com/v1/tracks/" + enc(id));
+                JSONObject item = new JSONObject(json);
+
+                String song = item.optString("name", "");
+                JSONArray artists = item.optJSONArray("artists");
+                if (song.isEmpty() || artists == null || artists.length() == 0) throw new Exception("Could not parse shared track.");
+
+                String artist = artists.getJSONObject(0).optString("name", "");
+                if (artist.isEmpty()) throw new Exception("Could not parse shared artist.");
+
+                main.post(() -> {
+                    artistInput.setText(artist);
+                    titleInput.setText(song);
+                    statusText.setText("Shared track found: " + artist + " - " + song);
+                });
+
+                fetchAndTranslate(artist, song);
+            } catch (Exception e) {
+                main.post(() -> {
+                    statusText.setText("Spotify shared track failed.");
+                    outputText.setText(e.getMessage());
+                });
+            }
+        });
+    }
+
+    private void useSpotifyNotificationFallback() {
+        String artist = prefs().getString("notif_artist", "").trim();
+        String song = prefs().getString("notif_song", "").trim();
+
+        if (artist.isEmpty() || song.isEmpty()) {
+            statusText.setText("No Spotify notification found.");
+            outputText.setText("Tap Enable notification access, allow Spotify Translator, then play a song in Spotify.");
+            return;
+        }
+
+        artistInput.setText(artist);
+        titleInput.setText(song);
+        statusText.setText("Notification track found: " + artist + " - " + song);
+        fetchAndTranslate(artist, song);
     }
 
     private void exchangeCodeForToken(String code) {
