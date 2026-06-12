@@ -7,7 +7,28 @@ import android.service.notification.StatusBarNotification;
 
 public class SpotifyNotificationListener extends NotificationListenerService {
     @Override
+    public void onListenerConnected() {
+        super.onListenerConnected();
+        scanActiveNotifications();
+    }
+
+    @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
+        saveIfSpotify(sbn);
+    }
+
+    private void scanActiveNotifications() {
+        try {
+            StatusBarNotification[] active = getActiveNotifications();
+            if (active == null) return;
+
+            for (StatusBarNotification sbn : active) {
+                saveIfSpotify(sbn);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void saveIfSpotify(StatusBarNotification sbn) {
         if (sbn == null || sbn.getPackageName() == null) return;
         if (!"com.spotify.music".equals(sbn.getPackageName())) return;
 
@@ -16,13 +37,24 @@ public class SpotifyNotificationListener extends NotificationListenerService {
 
         CharSequence title = n.extras.getCharSequence(Notification.EXTRA_TITLE);
         CharSequence text = n.extras.getCharSequence(Notification.EXTRA_TEXT);
+        CharSequence subText = n.extras.getCharSequence(Notification.EXTRA_SUB_TEXT);
 
-        if (title == null || text == null) return;
+        String song = title == null ? "" : title.toString().trim();
+        String artist = text == null ? "" : text.toString().trim();
+
+        if (artist.isEmpty() && subText != null) {
+            artist = subText.toString().trim();
+        }
+
+        if (song.isEmpty() || artist.isEmpty()) return;
+
+        if (song.equalsIgnoreCase("Spotify")) return;
+        if (artist.equalsIgnoreCase("Spotify")) return;
 
         SharedPreferences prefs = getSharedPreferences("spotify_translator_prefs", MODE_PRIVATE);
         prefs.edit()
-                .putString("notif_song", title.toString())
-                .putString("notif_artist", text.toString())
+                .putString("notif_song", song)
+                .putString("notif_artist", artist)
                 .apply();
     }
 }
