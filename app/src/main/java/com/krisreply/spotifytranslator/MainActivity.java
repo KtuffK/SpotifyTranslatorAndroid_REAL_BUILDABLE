@@ -34,6 +34,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -357,19 +358,49 @@ public class MainActivity extends Activity {
 
     private String fetchLyrics(String artist, String song) throws Exception {
         String[] tries = buildTitleTries(song);
-        Exception last = null;
 
         for (String title : tries) {
             try {
-                JSONObject obj = new JSONObject(httpGet("https://api.lyrics.ovh/v1/" + enc(artist) + "/" + enc(title)));
-                String lyrics = obj.optString("lyrics", "").trim();
-                if (!lyrics.isEmpty()) return lyrics;
-            } catch (Exception e) {
-                last = e;
+                String lyrics = fetchLrcLibSearch(artist, title);
+                if (!lyrics.trim().isEmpty()) return lyrics;
+            } catch (Exception ignored) {}
+
+            try {
+                String lyrics = fetchLyricsOvh(artist, title);
+                if (!lyrics.trim().isEmpty()) return lyrics;
+            } catch (Exception ignored) {}
+        }
+
+        throw new Exception("No free lyrics source found. Paste lyrics manually below.");
+    }
+
+    private String fetchLrcLibSearch(String artist, String song) throws Exception {
+        String url = "https://lrclib.net/api/search?artist_name=" + enc(artist) + "&track_name=" + enc(song);
+        JSONArray arr = new JSONArray(httpGet(url));
+
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject obj = arr.getJSONObject(i);
+
+            String plain = obj.optString("plainLyrics", "").trim();
+            if (!plain.isEmpty() && !"null".equalsIgnoreCase(plain)) return plain;
+
+            String synced = obj.optString("syncedLyrics", "").trim();
+            if (!synced.isEmpty() && !"null".equalsIgnoreCase(synced)) {
+                return synced
+                        .replaceAll("\\[[0-9]{1,2}:[0-9]{2}(\\.[0-9]{1,3})?\\]", "")
+                        .replaceAll("\\[[a-zA-Z]+:.*?\\]", "")
+                        .trim();
             }
         }
 
-        throw new Exception("No lyrics found after trying: " + String.join(", ", tries));
+        throw new Exception("No LRCLIB result.");
+    }
+
+    private String fetchLyricsOvh(String artist, String song) throws Exception {
+        JSONObject obj = new JSONObject(httpGet("https://api.lyrics.ovh/v1/" + enc(artist) + "/" + enc(song)));
+        String lyrics = obj.optString("lyrics", "").trim();
+        if (lyrics.isEmpty()) throw new Exception("No lyrics returned.");
+        return lyrics;
     }
 
     private String[] buildTitleTries(String song) {
