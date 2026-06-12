@@ -436,14 +436,12 @@ public class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 String lyrics = fetchLyrics(artist, song);
-                if (lyrics.length() > 4500) lyrics = lyrics.substring(0, 4500);
-
                 main.post(() -> statusText.setText("Translating..."));
-                String translated = translateText(lyrics, target);
+                String translated = translateLongText(lyrics, target);
 
-                String result = "TRACK\\n" + artist + " - " + song
-                        + "\\n\\nORIGINAL LYRICS\\n\\n" + lyrics
-                        + "\\n\\n\\nTRANSLATED (" + LANGS[idx][0] + ")\\n\\n" + translated;
+                String result = "TRACK\n" + artist + " - " + song
+                        + "\n\nORIGINAL LYRICS\n\n" + lyrics
+                        + "\n\n\nTRANSLATED (" + LANGS[idx][0] + ")\n\n" + translated;
 
                 main.post(() -> {
                     statusText.setText("Done.");
@@ -527,6 +525,31 @@ public class MainActivity extends Activity {
         if (!cleaned.equals(song)) return new String[]{song, cleaned};
 
         return new String[]{song};
+    }
+
+    private String translateLongText(String text, String targetLang) throws Exception {
+        String clean = text == null ? "" : text.trim();
+        if (clean.isEmpty()) throw new Exception("No lyrics to translate.");
+
+        String[] lines = clean.split("\\n");
+        StringBuilder chunk = new StringBuilder();
+        StringBuilder out = new StringBuilder();
+
+        for (String line : lines) {
+            if (chunk.length() + line.length() + 1 > 450) {
+                if (chunk.length() > 0) {
+                    out.append(translateText(chunk.toString(), targetLang)).append("\n\n");
+                    chunk.setLength(0);
+                }
+            }
+            chunk.append(line).append("\n");
+        }
+
+        if (chunk.length() > 0) {
+            out.append(translateText(chunk.toString(), targetLang));
+        }
+
+        return out.toString().trim();
     }
 
     private String translateText(String text, String targetLang) throws Exception {
