@@ -2,6 +2,11 @@ plugins {
     id "com.android.application"
 }
 
+def autoVersionCode = 100
+if (System.getenv("GITHUB_RUN_NUMBER") != null) {
+    autoVersionCode = System.getenv("GITHUB_RUN_NUMBER").toInteger() + 100
+}
+
 android {
     namespace "com.krisreply.spotifytranslator"
     compileSdk 35
@@ -10,7 +15,7 @@ android {
         applicationId "com.krisreply.spotifytranslator"
         minSdk 26
         targetSdk 35
-        versionCode (System.getenv("GITHUB_RUN_NUMBER") ?: "100").toInteger()
-        versionName "0.5.0"
+        versionCode autoVersionCode
+        versionName "0.5.1"
     }
 }
