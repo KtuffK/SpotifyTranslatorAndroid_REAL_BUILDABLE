@@ -56,7 +56,6 @@ public class MainActivity extends Activity {
     private TextView loginText;
     private String currentSyncedLyrics = "";
     private final Handler lyricHandler = new Handler(Looper.getMainLooper());
-    private String lastTranslationTargetName = "";
 
     private String accessToken = "";
     private String codeVerifier = "";
@@ -84,7 +83,6 @@ public class MainActivity extends Activity {
         buildUi();
         handleIncomingIntent(getIntent());
         updateLoginState();
-        requestNotificationAccessOnce();
         requestNotificationAccessOnce();
     }
 
@@ -385,47 +383,6 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void getCurrentPlayingAndTranslate() {
-        if (accessToken == null || accessToken.isEmpty()) {
-            statusText.setText("Login with Spotify first.");
-            return;
-        }
-
-        statusText.setText("Reading current Spotify track...");
-        outputText.setText("");
-
-        executor.execute(() -> {
-            try {
-                String json = spotifyGet("https://api.spotify.com/v1/me/player/currently-playing");
-                if (json == null || json.trim().isEmpty()) throw new Exception("No current track. Play Spotify first.");
-
-                JSONObject obj = new JSONObject(json);
-                JSONObject item = obj.optJSONObject("item");
-                if (item == null) throw new Exception("No track item found.");
-
-                String song = item.optString("name", "");
-                JSONArray artists = item.optJSONArray("artists");
-                if (song.isEmpty() || artists == null || artists.length() == 0) throw new Exception("Could not parse track.");
-
-                String artist = artists.getJSONObject(0).optString("name", "");
-                if (artist.isEmpty()) throw new Exception("Could not parse artist.");
-
-                main.post(() -> {
-                    artistInput.setText(artist);
-                    titleInput.setText(song);
-                    statusText.setText("Track found: " + artist + " - " + song);
-                });
-
-                fetchAndTranslate(artist, song);
-            } catch (Exception e) {
-                main.post(() -> {
-                    statusText.setText("Spotify track read failed.");
-                    outputText.setText(e.getMessage());
-                });
-            }
-        });
-    }
-
     private void fetchAndTranslateFromFields() {
         String artist = artistInput.getText().toString().trim();
         String song = titleInput.getText().toString().trim();
@@ -653,8 +610,9 @@ public class MainActivity extends Activity {
 
         ArrayList<Integer> times = new ArrayList<>();
         ArrayList<String> lines = new ArrayList<>();
+        ArrayList<Integer> starts = new ArrayList<>();
 
-        String[] raw = syncedLyrics.split("\\n");
+        String[] raw = syncedLyrics.split("\n");
         for (String r : raw) {
             if (!r.startsWith("[")) continue;
             int close = r.indexOf("]");
@@ -662,6 +620,7 @@ public class MainActivity extends Activity {
 
             int ms = parseLrcTimeMs(r.substring(1, close));
             String line = r.substring(close + 1).trim();
+
             if (ms >= 0 && !line.isEmpty()) {
                 times.add(ms);
                 lines.add(line);
@@ -673,19 +632,31 @@ public class MainActivity extends Activity {
             return;
         }
 
-        final long start = System.currentTimeMillis();
+        int searchFrom = 0;
+        for (String line : lines) {
+            int pos = fullText.indexOf(line, searchFrom);
+            if (pos < 0) pos = fullText.indexOf(line);
+            starts.add(pos);
+            if (pos >= 0) searchFrom = pos + line.length();
+        }
+
+        final long startMs = System.currentTimeMillis();
 
         Runnable runner = new Runnable() {
             @Override public void run() {
-                int elapsed = (int)(System.currentTimeMillis() - start);
+                int elapsed = (int)(System.currentTimeMillis() - startMs);
                 int idx = 0;
+
                 for (int i = 0; i < times.size(); i++) {
                     if (elapsed >= times.get(i)) idx = i;
                     else break;
                 }
 
                 int nextMs = idx + 1 < times.size() ? times.get(idx + 1) : times.get(idx) + 3500;
-                renderHighlightedText(fullText, lines.get(idx), elapsed - times.get(idx), Math.max(500, nextMs - times.get(idx)));
+                int duration = Math.max(500, nextMs - times.get(idx));
+                int lineElapsed = Math.max(0, elapsed - times.get(idx));
+
+                renderHighlightedText(fullText, lines.get(idx), starts.get(idx), lineElapsed, duration);
 
                 if (elapsed < times.get(times.size() - 1) + 10000) {
                     lyricHandler.postDelayed(this, 250);
@@ -708,25 +679,53 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void renderHighlightedText(String fullText, String currentLine, int lineElapsed, int lineDuration) {
-        SpannableString span = new SpannableString(fullText);
-        int start = fullText.indexOf(currentLine);
-        if (start < 0) {
+    private void renderHighlightedText(String fullText, String currentLine, int lineStart, int lineElapsed, int lineDuration) {
+        if (lineStart < 0 || currentLine == null || currentLine.isEmpty()) {
             outputText.setText(fullText);
             return;
         }
 
-        int end = start + currentLine.length();
-        span.setSpan(new ForegroundColorSpan(Color.rgb(144, 238, 144)), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        SpannableString span = new SpannableString(fullText);
 
-        String[] words = currentLine.split("\\s+");
+        int lineEnd = Math.min(lineStart + currentLine.length(), fullText.length());
+        span.setSpan(
+                new ForegroundColorSpan(Color.rgb(144, 238, 144)),
+                lineStart,
+                lineEnd,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        );
+
+        String[] words = currentLine.trim().split("\s+");
         if (words.length > 0) {
-            int wordIndex = Math.min(words.length - 1, Math.max(0, (int)((lineElapsed / (float)lineDuration) * words.length)));
-            String word = words[wordIndex];
-            int wordStart = fullText.indexOf(word, start);
-            if (wordStart >= start && wordStart < end) {
-                int wordEnd = Math.min(wordStart + word.length(), end);
-                span.setSpan(new ForegroundColorSpan(Color.rgb(0, 160, 70)), wordStart, wordEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int wordIndex = Math.min(
+                    words.length - 1,
+                    Math.max(0, (int)((lineElapsed / (float)lineDuration) * words.length))
+            );
+
+            int scan = lineStart;
+            int wordStart = -1;
+            int wordEnd = -1;
+
+            for (int i = 0; i <= wordIndex && scan < lineEnd; i++) {
+                while (scan < lineEnd && Character.isWhitespace(fullText.charAt(scan))) scan++;
+                int ws = scan;
+                while (scan < lineEnd && !Character.isWhitespace(fullText.charAt(scan))) scan++;
+                int we = scan;
+
+                if (i == wordIndex) {
+                    wordStart = ws;
+                    wordEnd = we;
+                    break;
+                }
+            }
+
+            if (wordStart >= lineStart && wordEnd > wordStart && wordEnd <= lineEnd) {
+                span.setSpan(
+                        new ForegroundColorSpan(Color.rgb(0, 160, 70)),
+                        wordStart,
+                        wordEnd,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                );
             }
         }
 
