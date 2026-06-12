@@ -430,8 +430,9 @@ public class MainActivity extends Activity {
                 }
 
                 String sourceLang = sourceLooksThai ? "th" : "en";
+                final String displayTargetName = actualTargetName;
 
-                main.post(() -> statusText.setText("Translating " + sourceLang.toUpperCase() + " → " + actualTargetName + "..."));
+                main.post(() -> statusText.setText("Translating " + sourceLang.toUpperCase() + " → " + displayTargetName + "..."));
                 String translated = translateLongText(lyrics, sourceLang, actualTarget);
 
                 String result = "TRACK\n" + artist + " - " + song
@@ -695,7 +696,7 @@ public class MainActivity extends Activity {
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         );
 
-        String[] words = currentLine.trim().split("\s+");
+        String[] words = currentLine.trim().split("\\s+");
         if (words.length > 0) {
             int wordIndex = Math.min(
                     words.length - 1,
