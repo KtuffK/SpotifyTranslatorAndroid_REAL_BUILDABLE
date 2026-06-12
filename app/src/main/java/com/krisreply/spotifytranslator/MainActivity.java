@@ -334,7 +334,7 @@ public class MainActivity extends Activity {
 
         if (artist.isEmpty() || song.isEmpty()) {
             statusText.setText("No Spotify notification found.");
-            outputText.setText("Tap Enable notification access, allow Spotify Translator, then play a song in Spotify.");
+            outputText.setText("Play a song in Spotify and make sure its notification is visible. If this still fails, Android notification access is not enabled for Spotify Translator.");
             return;
         }
 
@@ -422,10 +422,24 @@ public class MainActivity extends Activity {
     private void fetchAndTranslateFromFields() {
         String artist = artistInput.getText().toString().trim();
         String song = titleInput.getText().toString().trim();
+
         if (artist.isEmpty() || song.isEmpty()) {
-            statusText.setText("Enter artist and song title first.");
+            String notifArtist = prefs().getString("notif_artist", "").trim();
+            String notifSong = prefs().getString("notif_song", "").trim();
+
+            if (!notifArtist.isEmpty() && !notifSong.isEmpty()) {
+                artistInput.setText(notifArtist);
+                titleInput.setText(notifSong);
+                statusText.setText("Using Spotify notification: " + notifArtist + " - " + notifSong);
+                fetchAndTranslate(notifArtist, notifSong);
+                return;
+            }
+
+            statusText.setText("No song detected.");
+            outputText.setText("Play a song in Spotify, make sure the Spotify notification is visible, then tap Manual fetch again. Or type artist and song manually.");
             return;
         }
+
         fetchAndTranslate(artist, song);
     }
 
