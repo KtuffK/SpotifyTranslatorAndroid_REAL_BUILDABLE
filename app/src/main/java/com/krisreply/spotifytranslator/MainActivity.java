@@ -19,6 +19,9 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.InputType;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.provider.Settings;
 
 import org.json.JSONArray;
@@ -36,6 +39,7 @@ import java.security.SecureRandom;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashSet;
+import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -50,6 +54,8 @@ public class MainActivity extends Activity {
     private TextView statusText;
     private TextView outputText;
     private TextView loginText;
+    private String currentSyncedLyrics = "";
+    private final Handler lyricHandler = new Handler(Looper.getMainLooper());
     private String lastTranslationTargetName = "";
 
     private String accessToken = "";
@@ -477,7 +483,11 @@ public class MainActivity extends Activity {
 
                 main.post(() -> {
                     statusText.setText("Done.");
-                    outputText.setText(result);
+                    if (currentSyncedLyrics != null && !currentSyncedLyrics.trim().isEmpty()) {
+                        startSyncedHighlight(result, currentSyncedLyrics);
+                    } else {
+                        outputText.setText(result);
+                    }
                 });
             } catch (Exception e) {
                 main.post(() -> {
@@ -489,6 +499,7 @@ public class MainActivity extends Activity {
     }
 
     private String fetchLyrics(String artist, String song) throws Exception {
+        currentSyncedLyrics = "";
         String[] tries = buildTitleTries(song);
 
         for (String title : tries) {
@@ -518,6 +529,7 @@ public class MainActivity extends Activity {
 
             String synced = obj.optString("syncedLyrics", "").trim();
             if (!synced.isEmpty() && !"null".equalsIgnoreCase(synced)) {
+                currentSyncedLyrics = synced;
                 return synced
                         .replaceAll("\\[[0-9]{1,2}:[0-9]{2}(\\.[0-9]{1,3})?\\]", "")
                         .replaceAll("\\[[a-zA-Z]+:.*?\\]", "")
@@ -601,13 +613,124 @@ public class MainActivity extends Activity {
     private String translateText(String text, String sourceLang, String targetLang) throws Exception {
         if (sourceLang.equals(targetLang)) return text;
 
-        JSONObject obj = new JSONObject(httpGet("https://api.mymemory.translated.net/get?q=" + enc(text)
-                + "&langpair=" + enc(sourceLang + "|" + targetLang)));
-        JSONObject data = obj.optJSONObject("responseData");
-        if (data == null) throw new Exception("No translation response.");
-        String translated = data.optString("translatedText", "").trim();
+        try {
+            JSONObject obj = new JSONObject(httpGet("https://api.mymemory.translated.net/get?q=" + enc(text)
+                    + "&langpair=" + enc(sourceLang + "|" + targetLang)));
+            JSONObject data = obj.optJSONObject("responseData");
+            if (data != null) {
+                String translated = data.optString("translatedText", "").trim();
+                if (!translated.isEmpty()
+                        && !translated.toLowerCase().contains("query length limit exceeded")
+                        && !translated.toLowerCase().contains("quota")) {
+                    return translated;
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return translateTextGoogleFree(text, sourceLang, targetLang);
+    }
+
+    private String translateTextGoogleFree(String text, String sourceLang, String targetLang) throws Exception {
+        String url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl="
+                + enc(sourceLang) + "&tl=" + enc(targetLang) + "&dt=t&q=" + enc(text);
+
+        JSONArray root = new JSONArray(httpGet(url));
+        JSONArray sentences = root.getJSONArray(0);
+        StringBuilder out = new StringBuilder();
+
+        for (int i = 0; i < sentences.length(); i++) {
+            JSONArray part = sentences.getJSONArray(i);
+            if (!part.isNull(0)) out.append(part.getString(0));
+        }
+
+        String translated = out.toString().trim();
         if (translated.isEmpty()) throw new Exception("No translated text returned.");
         return translated;
+    }
+
+    private void startSyncedHighlight(String fullText, String syncedLyrics) {
+        lyricHandler.removeCallbacksAndMessages(null);
+
+        ArrayList<Integer> times = new ArrayList<>();
+        ArrayList<String> lines = new ArrayList<>();
+
+        String[] raw = syncedLyrics.split("\\n");
+        for (String r : raw) {
+            if (!r.startsWith("[")) continue;
+            int close = r.indexOf("]");
+            if (close <= 0) continue;
+
+            int ms = parseLrcTimeMs(r.substring(1, close));
+            String line = r.substring(close + 1).trim();
+            if (ms >= 0 && !line.isEmpty()) {
+                times.add(ms);
+                lines.add(line);
+            }
+        }
+
+        if (times.isEmpty()) {
+            outputText.setText(fullText);
+            return;
+        }
+
+        final long start = System.currentTimeMillis();
+
+        Runnable runner = new Runnable() {
+            @Override public void run() {
+                int elapsed = (int)(System.currentTimeMillis() - start);
+                int idx = 0;
+                for (int i = 0; i < times.size(); i++) {
+                    if (elapsed >= times.get(i)) idx = i;
+                    else break;
+                }
+
+                int nextMs = idx + 1 < times.size() ? times.get(idx + 1) : times.get(idx) + 3500;
+                renderHighlightedText(fullText, lines.get(idx), elapsed - times.get(idx), Math.max(500, nextMs - times.get(idx)));
+
+                if (elapsed < times.get(times.size() - 1) + 10000) {
+                    lyricHandler.postDelayed(this, 250);
+                }
+            }
+        };
+
+        lyricHandler.post(runner);
+    }
+
+    private int parseLrcTimeMs(String t) {
+        try {
+            String[] parts = t.split(":");
+            if (parts.length != 2) return -1;
+            int min = Integer.parseInt(parts[0]);
+            double sec = Double.parseDouble(parts[1]);
+            return (int)((min * 60 + sec) * 1000);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    private void renderHighlightedText(String fullText, String currentLine, int lineElapsed, int lineDuration) {
+        SpannableString span = new SpannableString(fullText);
+        int start = fullText.indexOf(currentLine);
+        if (start < 0) {
+            outputText.setText(fullText);
+            return;
+        }
+
+        int end = start + currentLine.length();
+        span.setSpan(new ForegroundColorSpan(Color.rgb(144, 238, 144)), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        String[] words = currentLine.split("\\s+");
+        if (words.length > 0) {
+            int wordIndex = Math.min(words.length - 1, Math.max(0, (int)((lineElapsed / (float)lineDuration) * words.length)));
+            String word = words[wordIndex];
+            int wordStart = fullText.indexOf(word, start);
+            if (wordStart >= start && wordStart < end) {
+                int wordEnd = Math.min(wordStart + word.length(), end);
+                span.setSpan(new ForegroundColorSpan(Color.rgb(0, 160, 70)), wordStart, wordEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+
+        outputText.setText(span);
     }
 
     private String spotifyGet(String urlText) throws Exception {
