@@ -434,8 +434,10 @@ public class MainActivity extends Activity {
 
                 main.post(() -> statusText.setText("Translating " + sourceLang.toUpperCase() + " → " + displayTargetName + "..."));
                 String translated = translateLongText(lyrics, sourceLang, actualTarget);
+                String translatedTrack = translateText(song, sourceLooksThai ? "th" : "auto", "en");
 
                 String result = "TRACK\n" + artist + " - " + song
+                        + "\n" + artist + " - " + translatedTrack
                         + "\n\nORIGINAL LYRICS\n\n" + lyrics
                         + "\n\n\nTRANSLATED (" + actualTargetName + ")\n\n" + translated;
 
