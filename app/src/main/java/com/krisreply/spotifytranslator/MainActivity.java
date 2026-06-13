@@ -93,6 +93,14 @@ public class MainActivity extends Activity {
         handleIncomingIntent(intent);
     }
 
+    @Override
+    protected void onDestroy() {
+        lyricHandler.removeCallbacksAndMessages(null);
+        main.removeCallbacksAndMessages(null);
+        executor.shutdownNow();
+        super.onDestroy();
+    }
+
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
