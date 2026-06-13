@@ -445,19 +445,11 @@ public class MainActivity extends Activity {
                 main.post(() -> statusText.setText("Translating " + sourceLang.toUpperCase() + " → " + displayTargetName + "..."));
                 String translated = translateLongText(lyrics, sourceLang, actualTarget);
                 String translatedTrack = translateText(song, sourceLooksThai ? "th" : "auto", "en");
-
-                String result = "TRACK\n" + artist + " - " + song
-                        + "\n" + artist + " - " + translatedTrack
-                        + "\n\nORIGINAL LYRICS\n\n" + lyrics
-                        + "\n\n\nTRANSLATED (" + actualTargetName + ")\n\n" + translated;
+                SpannableString result = buildLineByLineLyricsDisplay(artist, song, translatedTrack, lyrics, translated, sourceLang, actualTargetName);
 
                 main.post(() -> {
                     statusText.setText("Done.");
-                    if (currentSyncedLyrics != null && !currentSyncedLyrics.trim().isEmpty()) {
-                        startSyncedHighlight(result, currentSyncedLyrics);
-                    } else {
-                        outputText.setText(result);
-                    }
+                    outputText.setText(result);
                 });
             } catch (Exception e) {
                 main.post(() -> {
@@ -466,6 +458,71 @@ public class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private SpannableString buildLineByLineLyricsDisplay(String artist, String song, String translatedTrack, String lyrics, String translatedLyrics, String sourceLang, String targetName) throws Exception {
+        String cleanLyrics = lyrics == null ? "" : lyrics.trim();
+        String cleanTranslated = translatedLyrics == null ? "" : translatedLyrics.trim();
+
+        if (cleanLyrics.isEmpty()) throw new Exception("No lyrics to display.");
+        if (cleanTranslated.isEmpty()) throw new Exception("No translated lyrics to display.");
+
+        String[] lyricLines = cleanLyrics.split("\\n");
+        String[] translatedLines = cleanTranslated.split("\\n");
+
+        StringBuilder out = new StringBuilder();
+        ArrayList<int[]> lyricRanges = new ArrayList<>();
+        ArrayList<int[]> translationRanges = new ArrayList<>();
+
+        out.append("TRACK\\n")
+                .append(artist).append(" - ").append(song).append("\\n")
+                .append(artist).append(" - ").append(translatedTrack).append("\\n\\n")
+                .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" → ").append(targetName).append(")\\n\\n");
+
+        int translationIndex = 0;
+
+        for (String rawLine : lyricLines) {
+            String lyricLine = rawLine == null ? "" : rawLine.trim();
+
+            if (lyricLine.isEmpty()) {
+                out.append("\\n");
+                continue;
+            }
+
+            int lyricStart = out.length();
+            out.append(lyricLine).append("\\n");
+            lyricRanges.add(new int[]{lyricStart, lyricStart + lyricLine.length()});
+
+            String translatedLine = "";
+            while (translationIndex < translatedLines.length && translatedLines[translationIndex].trim().isEmpty()) {
+                translationIndex++;
+            }
+
+            if (translationIndex < translatedLines.length) {
+                translatedLine = translatedLines[translationIndex].trim();
+                translationIndex++;
+            }
+
+            int translationStart = out.length();
+            out.append(translatedLine).append("\\n\\n");
+            translationRanges.add(new int[]{translationStart, translationStart + translatedLine.length()});
+        }
+
+        SpannableString span = new SpannableString(out.toString().trim());
+
+        for (int[] range : lyricRanges) {
+            if (range[1] > range[0]) {
+                span.setSpan(new ForegroundColorSpan(Color.rgb(80, 170, 255)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+
+        for (int[] range : translationRanges) {
+            if (range[1] > range[0]) {
+                span.setSpan(new ForegroundColorSpan(Color.rgb(80, 220, 120)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+
+        return span;
     }
 
     private String fetchLyrics(String artist, String song) throws Exception {
