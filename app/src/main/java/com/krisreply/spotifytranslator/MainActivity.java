@@ -142,16 +142,6 @@ public class MainActivity extends Activity {
         spotifyButton.setOnClickListener(v -> openSpotify());
         root.addView(spotifyButton);
 
-        Button clearButton = button("Clear Spotify login");
-        clearButton.setOnClickListener(v -> {
-            accessToken = "";
-            codeVerifier = "";
-            prefs().edit().clear().apply();
-            updateLoginState();
-            statusText.setText("Spotify login cleared.");
-        });
-        root.addView(clearButton);
-
         statusText = label("Ready.");
         statusText.setTextColor(Color.rgb(30, 185, 84));
         statusText.setPadding(0, 22, 0, 16);

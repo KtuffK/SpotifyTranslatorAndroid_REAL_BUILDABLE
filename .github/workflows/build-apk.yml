@@ -33,7 +33,25 @@ jobs:
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          chmod +x ./gradlew
+          ./gradlew clean assembleDebug --no-daemon --stacktrace
+
+      - name: Verify APK
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK" || { echo "APK missing"; exit 1; }
+
+          SIZE=$(stat -c%s "$APK")
+          echo "APK size: $SIZE bytes"
+
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "APK too small to be valid"
+            exit 1
+          fi
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
