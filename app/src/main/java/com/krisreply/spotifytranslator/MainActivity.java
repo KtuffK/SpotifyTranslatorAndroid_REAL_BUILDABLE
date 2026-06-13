@@ -478,20 +478,41 @@ public class MainActivity extends Activity {
         String cleanLyrics = normalizeNewlines(lyrics);
         if (cleanLyrics.isEmpty()) throw new Exception("No lyrics to display.");
 
-        String[] lyricLines = cleanLyrics.split("\\n", -1);
+        ArrayList<ArrayList<String>> blocks = splitLyricBlocks(cleanLyrics);
 
         StringBuilder markedLyrics = new StringBuilder();
-        for (int i = 0; i < lyricLines.length; i++) {
-            String line = lyricLines[i] == null ? "" : lyricLines[i].trim();
-            markedLyrics.append("[")
-                    .append(String.format("%03d", i))
-                    .append("] ")
-                    .append(line)
-                    .append("\n");
+        HashMap<String, Integer> lineIds = new HashMap<>();
+        int id = 0;
+
+        for (int b = 0; b < blocks.size(); b++) {
+            ArrayList<String> block = blocks.get(b);
+            for (int l = 0; l < block.size(); l++) {
+                String line = stripSectionTag(block.get(l)).trim();
+                if (line.isEmpty()) continue;
+
+                lineIds.put(b + ":" + l, id);
+                markedLyrics.append("[")
+                        .append(String.format("%03d", id))
+                        .append("] ")
+                        .append(line)
+                        .append("\n");
+                id++;
+            }
         }
 
         String translatedMarked = normalizeNewlines(translateLongText(markedLyrics.toString(), sourceLang, targetLang));
         Map<Integer, String> translatedMap = parseMarkedTranslations(translatedMarked);
+
+        HashMap<String, Integer> repeatCounts = new HashMap<>();
+        for (ArrayList<String> block : blocks) {
+            String key = normalizeBlockKey(block);
+            if (!key.isEmpty()) repeatCounts.put(key, repeatCounts.getOrDefault(key, 0) + 1);
+        }
+
+        HashMap<String, String> repeatLabels = new HashMap<>();
+        int verseNo = 1;
+        int chorusNo = 1;
+        int sectionNo = 1;
 
         StringBuilder out = new StringBuilder();
         ArrayList<int[]> headerRanges = new ArrayList<>();
@@ -501,52 +522,53 @@ public class MainActivity extends Activity {
         out.append("TRACK\n")
                 .append(artist).append(" - ").append(song).append("\n")
                 .append(artist).append(" - ").append(translatedTrack).append("\n\n")
-                .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" to ").append(targetName).append(")\n\n");
+                .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" to ").append(targetName).append(")\n");
 
-        int sectionNumber = 1;
-        int verseNumber = 1;
-        int chorusNumber = 1;
-        int bridgeNumber = 1;
-        boolean needSectionHeader = true;
+        for (int b = 0; b < blocks.size(); b++) {
+            ArrayList<String> block = blocks.get(b);
+            if (block.isEmpty()) continue;
 
-        for (int i = 0; i < lyricLines.length; i++) {
-            String lyricLine = lyricLines[i] == null ? "" : lyricLines[i].trim();
+            String explicit = explicitSectionLabel(block);
+            String key = normalizeBlockKey(block);
+            String label;
 
-            if (lyricLine.isEmpty()) {
-                needSectionHeader = true;
-                out.append("\n\n");
-                continue;
+            if (!explicit.isEmpty()) {
+                label = explicit;
+            } else if (!key.isEmpty() && repeatCounts.getOrDefault(key, 0) > 1) {
+                if (!repeatLabels.containsKey(key)) repeatLabels.put(key, "CHORUS " + chorusNo++);
+                label = repeatLabels.get(key);
+            } else {
+                label = "VERSE " + verseNo++;
             }
 
-            if (needSectionHeader) {
-                String label = detectSectionLabel(lyricLine, sectionNumber, verseNumber, chorusNumber, bridgeNumber);
-
-                String lower = lyricLine.toLowerCase();
-                if (lower.contains("chorus")) chorusNumber++;
-                else if (lower.contains("bridge")) bridgeNumber++;
-                else if (lower.contains("verse")) verseNumber++;
-                else sectionNumber++;
-
-                int headerStart = out.length();
-                out.append("\n\n════════════════════\n")
-                        .append(label)
-                        .append("\n════════════════════\n\n");
-                headerRanges.add(new int[]{headerStart, out.length()});
-
-                needSectionHeader = false;
+            if (blocks.size() == 1 && explicit.isEmpty()) {
+                label = "LYRICS";
             }
 
-            int lyricStart = out.length();
-            out.append(lyricLine).append("\n");
-            lyricRanges.add(new int[]{lyricStart, lyricStart + lyricLine.length()});
+            int headerStart = out.length();
+            out.append("\n\n")
+                    .append(label)
+                    .append("\n")
+                    .append("────────────────────")
+                    .append("\n\n");
+            headerRanges.add(new int[]{headerStart, out.length()});
 
-            String translatedLine = translatedMap.get(i);
-            if (translatedLine == null) translatedLine = "";
-            translatedLine = translatedLine.trim();
+            for (int l = 0; l < block.size(); l++) {
+                String lyricLine = stripSectionTag(block.get(l)).trim();
+                if (lyricLine.isEmpty()) continue;
 
-            int translationStart = out.length();
-            out.append(translatedLine).append("\n\n");
-            translationRanges.add(new int[]{translationStart, translationStart + translatedLine.length()});
+                int lyricStart = out.length();
+                out.append(lyricLine).append("\n");
+                lyricRanges.add(new int[]{lyricStart, lyricStart + lyricLine.length()});
+
+                Integer lineId = lineIds.get(b + ":" + l);
+                String translatedLine = lineId == null ? "" : translatedMap.getOrDefault(lineId, "");
+                translatedLine = stripSectionTag(translatedLine).trim();
+
+                int translationStart = out.length();
+                out.append(translatedLine).append("\n\n");
+                translationRanges.add(new int[]{translationStart, translationStart + translatedLine.length()});
+            }
         }
 
         SpannableString span = new SpannableString(out.toString().trim());
@@ -572,18 +594,66 @@ public class MainActivity extends Activity {
         return span;
     }
 
-    private String detectSectionLabel(String lyricLine, int sectionNumber, int verseNumber, int chorusNumber, int bridgeNumber) {
-        String lower = lyricLine == null ? "" : lyricLine.toLowerCase();
+    private ArrayList<ArrayList<String>> splitLyricBlocks(String lyrics) {
+        ArrayList<ArrayList<String>> blocks = new ArrayList<>();
+        ArrayList<String> current = new ArrayList<>();
 
-        if (lower.contains("chorus")) return "CHORUS " + chorusNumber;
-        if (lower.contains("bridge")) return "BRIDGE " + bridgeNumber;
-        if (lower.contains("verse")) return "VERSE " + verseNumber;
+        for (String raw : lyrics.split("\\n", -1)) {
+            String line = raw == null ? "" : raw.trim();
+
+            if (line.isEmpty()) {
+                if (!current.isEmpty()) {
+                    blocks.add(current);
+                    current = new ArrayList<>();
+                }
+            } else {
+                current.add(line);
+            }
+        }
+
+        if (!current.isEmpty()) blocks.add(current);
+        return blocks;
+    }
+
+    private String explicitSectionLabel(ArrayList<String> block) {
+        if (block == null || block.isEmpty()) return "";
+
+        String first = block.get(0) == null ? "" : block.get(0).trim();
+        String lower = first.toLowerCase();
+
+        if (!first.startsWith("[") || !first.contains("]")) return "";
+
+        if (lower.contains("pre-chorus") || lower.contains("pre chorus")) return "PRE-CHORUS";
+        if (lower.contains("chorus")) return "CHORUS";
+        if (lower.contains("bridge")) return "BRIDGE";
+        if (lower.contains("verse")) return "VERSE";
         if (lower.contains("intro")) return "INTRO";
         if (lower.contains("outro")) return "OUTRO";
-        if (lower.contains("hook")) return "HOOK " + chorusNumber;
-        if (lower.contains("pre-chorus") || lower.contains("pre chorus")) return "PRE-CHORUS " + chorusNumber;
+        if (lower.contains("hook")) return "HOOK";
 
-        return "SECTION " + sectionNumber;
+        return "";
+    }
+
+    private String stripSectionTag(String line) {
+        if (line == null) return "";
+        return line.replaceFirst("^\\s*\\[[^\\]]+\\]\\s*", "").trim();
+    }
+
+    private String normalizeBlockKey(ArrayList<String> block) {
+        if (block == null) return "";
+
+        StringBuilder sb = new StringBuilder();
+
+        for (String line : block) {
+            String cleaned = stripSectionTag(line)
+                    .toLowerCase()
+                    .replaceAll("[^\\p{L}\\p{N}]+", "")
+                    .trim();
+
+            if (!cleaned.isEmpty()) sb.append(cleaned).append("|");
+        }
+
+        return sb.toString();
     }
 
     private String normalizeNewlines(String text) {
