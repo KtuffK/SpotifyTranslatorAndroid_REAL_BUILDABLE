@@ -225,9 +225,18 @@ public class MainActivity extends Activity {
 
     private void startSpotifyLogin() {
         try {
+            accessToken = "";
+            refreshToken = "";
             codeVerifier = randomCodeVerifier();
             String challenge = codeChallenge(codeVerifier);
-            prefs().edit().putString("code_verifier", codeVerifier).apply();
+
+            prefs().edit()
+                    .remove("access_token")
+                    .remove("refresh_token")
+                    .putString("code_verifier", codeVerifier)
+                    .apply();
+
+            updateLoginState();
 
             String authUrl = "https://accounts.spotify.com/authorize"
                     + "?client_id=" + enc(CLIENT_ID)
@@ -374,9 +383,11 @@ public class MainActivity extends Activity {
 
                 accessToken = token;
                 if (!refresh.isEmpty()) refreshToken = refresh;
+                codeVerifier = "";
 
                 SharedPreferences.Editor editor = prefs().edit().putString("access_token", accessToken);
                 if (!refreshToken.isEmpty()) editor.putString("refresh_token", refreshToken);
+                editor.remove("code_verifier");
                 editor.apply();
 
                 main.post(() -> {
