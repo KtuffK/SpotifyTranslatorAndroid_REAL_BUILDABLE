@@ -494,6 +494,7 @@ public class MainActivity extends Activity {
         Map<Integer, String> translatedMap = parseMarkedTranslations(translatedMarked);
 
         StringBuilder out = new StringBuilder();
+        ArrayList<int[]> headerRanges = new ArrayList<>();
         ArrayList<int[]> lyricRanges = new ArrayList<>();
         ArrayList<int[]> translationRanges = new ArrayList<>();
 
@@ -502,12 +503,37 @@ public class MainActivity extends Activity {
                 .append(artist).append(" - ").append(translatedTrack).append("\n\n")
                 .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" to ").append(targetName).append(")\n\n");
 
+        int sectionNumber = 1;
+        int verseNumber = 1;
+        int chorusNumber = 1;
+        int bridgeNumber = 1;
+        boolean needSectionHeader = true;
+
         for (int i = 0; i < lyricLines.length; i++) {
             String lyricLine = lyricLines[i] == null ? "" : lyricLines[i].trim();
 
             if (lyricLine.isEmpty()) {
-                out.append("\n");
+                needSectionHeader = true;
+                out.append("\n\n");
                 continue;
+            }
+
+            if (needSectionHeader) {
+                String label = detectSectionLabel(lyricLine, sectionNumber, verseNumber, chorusNumber, bridgeNumber);
+
+                String lower = lyricLine.toLowerCase();
+                if (lower.contains("chorus")) chorusNumber++;
+                else if (lower.contains("bridge")) bridgeNumber++;
+                else if (lower.contains("verse")) verseNumber++;
+                else sectionNumber++;
+
+                int headerStart = out.length();
+                out.append("\n\n════════════════════\n")
+                        .append(label)
+                        .append("\n════════════════════\n\n");
+                headerRanges.add(new int[]{headerStart, out.length()});
+
+                needSectionHeader = false;
             }
 
             int lyricStart = out.length();
@@ -525,6 +551,12 @@ public class MainActivity extends Activity {
 
         SpannableString span = new SpannableString(out.toString().trim());
 
+        for (int[] range : headerRanges) {
+            if (range[1] > range[0]) {
+                span.setSpan(new ForegroundColorSpan(Color.rgb(255, 215, 0)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+
         for (int[] range : lyricRanges) {
             if (range[1] > range[0]) {
                 span.setSpan(new ForegroundColorSpan(Color.rgb(30, 144, 255)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -538,6 +570,20 @@ public class MainActivity extends Activity {
         }
 
         return span;
+    }
+
+    private String detectSectionLabel(String lyricLine, int sectionNumber, int verseNumber, int chorusNumber, int bridgeNumber) {
+        String lower = lyricLine == null ? "" : lyricLine.toLowerCase();
+
+        if (lower.contains("chorus")) return "CHORUS " + chorusNumber;
+        if (lower.contains("bridge")) return "BRIDGE " + bridgeNumber;
+        if (lower.contains("verse")) return "VERSE " + verseNumber;
+        if (lower.contains("intro")) return "INTRO";
+        if (lower.contains("outro")) return "OUTRO";
+        if (lower.contains("hook")) return "HOOK " + chorusNumber;
+        if (lower.contains("pre-chorus") || lower.contains("pre chorus")) return "PRE-CHORUS " + chorusNumber;
+
+        return "SECTION " + sectionNumber;
     }
 
     private String normalizeNewlines(String text) {
