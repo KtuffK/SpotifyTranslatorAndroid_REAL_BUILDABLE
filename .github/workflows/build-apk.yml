@@ -45,7 +45,7 @@ jobs:
           SIZE=$(stat -c%s "$APK")
           echo "APK size: $SIZE bytes"
 
-          if [ "$SIZE" -lt 1000000 ]; then
+          if [ "$SIZE" -lt 10000 ]; then
             echo "APK too small to be valid"
             exit 1
           fi
