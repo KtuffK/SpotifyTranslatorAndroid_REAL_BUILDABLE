@@ -33,5 +33,10 @@ android {
         debug {
             signingConfig signingConfigs.debugStable
         }
+
+        release {
+            signingConfig signingConfigs.debugStable
+            minifyEnabled false
+        }
     }
 }
