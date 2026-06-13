@@ -2,9 +2,9 @@ plugins {
     id "com.android.application"
 }
 
-def autoVersionCode = 600
+def autoVersionCode = 1000
 if (System.getenv("GITHUB_RUN_NUMBER") != null) {
-    autoVersionCode = System.getenv("GITHUB_RUN_NUMBER").toInteger() + 600
+    autoVersionCode = System.getenv("GITHUB_RUN_NUMBER").toInteger() + 1000
 }
 
 android {
@@ -16,6 +16,6 @@ android {
         minSdk 26
         targetSdk 35
         versionCode autoVersionCode
-        versionName "0.9.0"
+        versionName "1.0.1"
     }
 }
