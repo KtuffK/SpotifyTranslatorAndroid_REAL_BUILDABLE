@@ -460,7 +460,7 @@ public class MainActivity extends Activity {
 
                 main.post(() -> {
                     statusText.setText("Done.");
-                    outputText.setText(result);
+                    outputText.setText(result, TextView.BufferType.SPANNABLE);
                 });
             } catch (Exception e) {
                 main.post(() -> {
@@ -488,7 +488,7 @@ public class MainActivity extends Activity {
         out.append("TRACK\\n")
                 .append(artist).append(" - ").append(song).append("\\n")
                 .append(artist).append(" - ").append(translatedTrack).append("\\n\\n")
-                .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" → ").append(targetName).append(")\\n\\n");
+                .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" to ").append(targetName).append(")\\n\\n");
 
         int translationIndex = 0;
 
@@ -519,7 +519,7 @@ public class MainActivity extends Activity {
             }
 
             int translationStart = out.length();
-            out.append(translatedLine).append("\\n\\n");
+            out.append(translatedLine).append("\\n");
             translationRanges.add(new int[]{translationStart, translationStart + translatedLine.length()});
         }
 
@@ -527,13 +527,13 @@ public class MainActivity extends Activity {
 
         for (int[] range : lyricRanges) {
             if (range[1] > range[0]) {
-                span.setSpan(new ForegroundColorSpan(Color.rgb(80, 170, 255)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                span.setSpan(new ForegroundColorSpan(Color.rgb(30, 144, 255)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
         }
 
         for (int[] range : translationRanges) {
             if (range[1] > range[0]) {
-                span.setSpan(new ForegroundColorSpan(Color.rgb(80, 220, 120)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                span.setSpan(new ForegroundColorSpan(Color.rgb(50, 255, 90)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
         }
 
