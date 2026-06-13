@@ -2,9 +2,9 @@ plugins {
     id "com.android.application"
 }
 
-def autoVersionCode = 100
+def autoVersionCode = 200
 if (System.getenv("GITHUB_RUN_NUMBER") != null) {
-    autoVersionCode = System.getenv("GITHUB_RUN_NUMBER").toInteger() + 100
+    autoVersionCode = System.getenv("GITHUB_RUN_NUMBER").toInteger() + 200
 }
 
 android {
@@ -16,6 +16,21 @@ android {
         minSdk 26
         targetSdk 35
         versionCode autoVersionCode
-        versionName "0.5.1"
+        versionName "0.6.0"
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file("keystore/spotifytranslator-debug.jks")
+            storePassword "spotifytranslator"
+            keyAlias "spotifytranslator"
+            keyPassword "spotifytranslator"
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
     }
 }
