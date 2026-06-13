@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
     private final Handler lyricHandler = new Handler(Looper.getMainLooper());
 
     private String accessToken = "";
+    private String refreshToken = "";
     private String codeVerifier = "";
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -79,6 +80,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         accessToken = prefs().getString("access_token", "");
+        refreshToken = prefs().getString("refresh_token", "");
         codeVerifier = prefs().getString("code_verifier", "");
         buildUi();
         handleIncomingIntent(getIntent());
@@ -367,10 +369,15 @@ public class MainActivity extends Activity {
 
                 JSONObject obj = new JSONObject(httpPost("https://accounts.spotify.com/api/token", body));
                 String token = obj.optString("access_token", "");
+                String refresh = obj.optString("refresh_token", "");
                 if (token.isEmpty()) throw new Exception("Spotify returned no access token.");
 
                 accessToken = token;
-                prefs().edit().putString("access_token", accessToken).apply();
+                if (!refresh.isEmpty()) refreshToken = refresh;
+
+                SharedPreferences.Editor editor = prefs().edit().putString("access_token", accessToken);
+                if (!refreshToken.isEmpty()) editor.putString("refresh_token", refreshToken);
+                editor.apply();
 
                 main.post(() -> {
                     updateLoginState();
@@ -751,6 +758,17 @@ public class MainActivity extends Activity {
             int code = conn.getResponseCode();
             if (code == 204) return "";
             String body = readAll(code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream());
+            if (code == 401 && refreshSpotifyAccessToken()) {
+                conn.disconnect();
+                conn = (HttpURLConnection) new URL(urlText).openConnection();
+                conn.setConnectTimeout(20000);
+                conn.setReadTimeout(30000);
+                conn.setRequestProperty("Authorization", "Bearer " + accessToken);
+                conn.setRequestProperty("User-Agent", "SpotifyTranslatorAndroid/0.4");
+                code = conn.getResponseCode();
+                body = readAll(code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream());
+            }
+
             if (code == 401) {
                 accessToken = "";
                 prefs().edit().remove("access_token").apply();
@@ -760,6 +778,33 @@ public class MainActivity extends Activity {
             return body;
         } finally {
             if (conn != null) conn.disconnect();
+        }
+    }
+
+    private boolean refreshSpotifyAccessToken() {
+        try {
+            if (refreshToken == null || refreshToken.isEmpty()) return false;
+
+            String body = "client_id=" + enc(CLIENT_ID)
+                    + "&grant_type=refresh_token"
+                    + "&refresh_token=" + enc(refreshToken);
+
+            JSONObject obj = new JSONObject(httpPost("https://accounts.spotify.com/api/token", body));
+            String token = obj.optString("access_token", "");
+            String refresh = obj.optString("refresh_token", "");
+
+            if (token.isEmpty()) return false;
+
+            accessToken = token;
+            if (!refresh.isEmpty()) refreshToken = refresh;
+
+            SharedPreferences.Editor editor = prefs().edit().putString("access_token", accessToken);
+            if (!refreshToken.isEmpty()) editor.putString("refresh_token", refreshToken);
+            editor.apply();
+
+            return true;
+        } catch (Exception ignored) {
+            return false;
         }
     }
 
