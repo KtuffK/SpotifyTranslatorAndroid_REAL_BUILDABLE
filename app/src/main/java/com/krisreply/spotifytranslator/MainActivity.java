@@ -445,7 +445,7 @@ public class MainActivity extends Activity {
                 main.post(() -> statusText.setText("Translating " + sourceLang.toUpperCase() + " → " + displayTargetName + "..."));
                 String translated = translateLongText(lyrics, sourceLang, actualTarget);
                 String translatedTrack = translateText(song, sourceLooksThai ? "th" : "auto", "en");
-                SpannableString result = buildLineByLineLyricsDisplay(artist, song, translatedTrack, lyrics, translated, sourceLang, actualTargetName);
+                SpannableString result = buildLineByLineLyricsDisplay(artist, song, translatedTrack, lyrics, translated, sourceLang, actualTarget, actualTargetName);
 
                 main.post(() -> {
                     statusText.setText("Done.");
@@ -460,7 +460,7 @@ public class MainActivity extends Activity {
         });
     }
 
-    private SpannableString buildLineByLineLyricsDisplay(String artist, String song, String translatedTrack, String lyrics, String translatedLyrics, String sourceLang, String targetName) throws Exception {
+    private SpannableString buildLineByLineLyricsDisplay(String artist, String song, String translatedTrack, String lyrics, String translatedLyrics, String sourceLang, String targetLang, String targetName) throws Exception {
         String cleanLyrics = lyrics == null ? "" : lyrics.trim();
         String cleanTranslated = translatedLyrics == null ? "" : translatedLyrics.trim();
 
@@ -501,6 +501,10 @@ public class MainActivity extends Activity {
             if (translationIndex < translatedLines.length) {
                 translatedLine = translatedLines[translationIndex].trim();
                 translationIndex++;
+            }
+
+            if (translatedLine.isEmpty() || translatedLine.length() > Math.max(lyricLine.length() * 4, 80)) {
+                translatedLine = translateText(lyricLine, sourceLang, targetLang).trim();
             }
 
             int translationStart = out.length();
