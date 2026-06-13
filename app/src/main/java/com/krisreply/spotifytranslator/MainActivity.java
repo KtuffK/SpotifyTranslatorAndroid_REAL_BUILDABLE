@@ -432,7 +432,7 @@ public class MainActivity extends Activity {
                     actualTargetName = "English";
                 }
 
-                String sourceLang = sourceLooksThai ? "th" : "en";
+                String sourceLang = sourceLooksThai ? "th" : "auto";
                 final String displayTargetName = actualTargetName;
 
                 main.post(() -> statusText.setText("Translating " + sourceLang.toUpperCase() + " → " + displayTargetName + "..."));
@@ -576,19 +576,21 @@ public class MainActivity extends Activity {
     private String translateText(String text, String sourceLang, String targetLang) throws Exception {
         if (sourceLang.equals(targetLang)) return text;
 
-        try {
-            JSONObject obj = new JSONObject(httpGet("https://api.mymemory.translated.net/get?q=" + enc(text)
-                    + "&langpair=" + enc(sourceLang + "|" + targetLang)));
-            JSONObject data = obj.optJSONObject("responseData");
-            if (data != null) {
-                String translated = data.optString("translatedText", "").trim();
-                if (!translated.isEmpty()
-                        && !translated.toLowerCase().contains("query length limit exceeded")
-                        && !translated.toLowerCase().contains("quota")) {
-                    return translated;
+        if (!"auto".equals(sourceLang)) {
+            try {
+                JSONObject obj = new JSONObject(httpGet("https://api.mymemory.translated.net/get?q=" + enc(text)
+                        + "&langpair=" + enc(sourceLang + "|" + targetLang)));
+                JSONObject data = obj.optJSONObject("responseData");
+                if (data != null) {
+                    String translated = data.optString("translatedText", "").trim();
+                    if (!translated.isEmpty()
+                            && !translated.toLowerCase().contains("query length limit exceeded")
+                            && !translated.toLowerCase().contains("quota")) {
+                        return translated;
+                    }
                 }
-            }
-        } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+        }
 
         return translateTextGoogleFree(text, sourceLang, targetLang);
     }
