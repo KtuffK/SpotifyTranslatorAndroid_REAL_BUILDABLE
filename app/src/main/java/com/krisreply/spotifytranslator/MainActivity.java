@@ -129,9 +129,12 @@ public class MainActivity extends Activity {
         languageSpinner = new Spinner(this);
         String[] names = new String[LANGS.length];
         for (int i = 0; i < LANGS.length; i++) names[i] = LANGS[i][0];
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, names);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, names);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         languageSpinner.setAdapter(adapter);
         languageSpinner.setSelection(0);
+        languageSpinner.setBackgroundColor(Color.rgb(30, 30, 30));
+        languageSpinner.setPadding(18, 10, 18, 10);
         root.addView(languageSpinner);
 
         Button manualButton = button("Manual fetch lyrics + translate");
@@ -179,6 +182,8 @@ public class MainActivity extends Activity {
         e.setInputType(InputType.TYPE_CLASS_TEXT);
         e.setTextColor(Color.WHITE);
         e.setHintTextColor(Color.GRAY);
+        e.setTextSize(18);
+        e.setBackgroundColor(Color.rgb(30, 30, 30));
         e.setPadding(18, 12, 18, 12);
         e.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
