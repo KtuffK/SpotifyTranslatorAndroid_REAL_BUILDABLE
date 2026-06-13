@@ -40,8 +40,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
     private static final String CLIENT_ID = "6752064dce5f4943bdb9343ffd09ff90";
@@ -454,9 +458,8 @@ public class MainActivity extends Activity {
                 final String displayTargetName = actualTargetName;
 
                 main.post(() -> statusText.setText("Translating " + sourceLang.toUpperCase() + " → " + displayTargetName + "..."));
-                String translated = translateLongText(lyrics, sourceLang, actualTarget);
                 String translatedTrack = translateText(song, sourceLooksThai ? "th" : "auto", "en");
-                SpannableString result = buildLineByLineLyricsDisplay(artist, song, translatedTrack, lyrics, translated, sourceLang, actualTarget, actualTargetName);
+                SpannableString result = buildLineByLineLyricsDisplay(artist, song, translatedTrack, lyrics, sourceLang, actualTarget, actualTargetName);
 
                 main.post(() -> {
                     statusText.setText("Done.");
@@ -471,55 +474,52 @@ public class MainActivity extends Activity {
         });
     }
 
-    private SpannableString buildLineByLineLyricsDisplay(String artist, String song, String translatedTrack, String lyrics, String translatedLyrics, String sourceLang, String targetLang, String targetName) throws Exception {
-        String cleanLyrics = lyrics == null ? "" : lyrics.trim();
-        String cleanTranslated = translatedLyrics == null ? "" : translatedLyrics.trim();
-
+    private SpannableString buildLineByLineLyricsDisplay(String artist, String song, String translatedTrack, String lyrics, String sourceLang, String targetLang, String targetName) throws Exception {
+        String cleanLyrics = normalizeNewlines(lyrics);
         if (cleanLyrics.isEmpty()) throw new Exception("No lyrics to display.");
-        if (cleanTranslated.isEmpty()) throw new Exception("No translated lyrics to display.");
 
-        String[] lyricLines = cleanLyrics.split("\\n");
-        String[] translatedLines = cleanTranslated.split("\\n");
+        String[] lyricLines = cleanLyrics.split("\\n", -1);
+
+        StringBuilder markedLyrics = new StringBuilder();
+        for (int i = 0; i < lyricLines.length; i++) {
+            String line = lyricLines[i] == null ? "" : lyricLines[i].trim();
+            markedLyrics.append("[")
+                    .append(String.format("%03d", i))
+                    .append("] ")
+                    .append(line)
+                    .append("\n");
+        }
+
+        String translatedMarked = normalizeNewlines(translateLongText(markedLyrics.toString(), sourceLang, targetLang));
+        Map<Integer, String> translatedMap = parseMarkedTranslations(translatedMarked);
 
         StringBuilder out = new StringBuilder();
         ArrayList<int[]> lyricRanges = new ArrayList<>();
         ArrayList<int[]> translationRanges = new ArrayList<>();
 
-        out.append("TRACK\\n")
-                .append(artist).append(" - ").append(song).append("\\n")
-                .append(artist).append(" - ").append(translatedTrack).append("\\n\\n")
-                .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" to ").append(targetName).append(")\\n\\n");
+        out.append("TRACK\n")
+                .append(artist).append(" - ").append(song).append("\n")
+                .append(artist).append(" - ").append(translatedTrack).append("\n\n")
+                .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" to ").append(targetName).append(")\n\n");
 
-        int translationIndex = 0;
-
-        for (String rawLine : lyricLines) {
-            String lyricLine = rawLine == null ? "" : rawLine.trim();
+        for (int i = 0; i < lyricLines.length; i++) {
+            String lyricLine = lyricLines[i] == null ? "" : lyricLines[i].trim();
 
             if (lyricLine.isEmpty()) {
-                out.append("\\n");
+                out.append("\n");
                 continue;
             }
 
             int lyricStart = out.length();
-            out.append(lyricLine).append("\\n");
+            out.append(lyricLine).append("\n");
             lyricRanges.add(new int[]{lyricStart, lyricStart + lyricLine.length()});
 
-            String translatedLine = "";
-            while (translationIndex < translatedLines.length && translatedLines[translationIndex].trim().isEmpty()) {
-                translationIndex++;
-            }
-
-            if (translationIndex < translatedLines.length) {
-                translatedLine = translatedLines[translationIndex].trim();
-                translationIndex++;
-            }
-
-            if (translatedLine.isEmpty() || translatedLine.length() > Math.max(lyricLine.length() * 4, 80)) {
-                translatedLine = translateText(lyricLine, sourceLang, targetLang).trim();
-            }
+            String translatedLine = translatedMap.get(i);
+            if (translatedLine == null) translatedLine = "";
+            translatedLine = translatedLine.trim();
 
             int translationStart = out.length();
-            out.append(translatedLine).append("\\n");
+            out.append(translatedLine).append("\n\n");
             translationRanges.add(new int[]{translationStart, translationStart + translatedLine.length()});
         }
 
@@ -538,6 +538,48 @@ public class MainActivity extends Activity {
         }
 
         return span;
+    }
+
+    private String normalizeNewlines(String text) {
+        if (text == null) return "";
+        return text
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\\r", "\n")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n")
+                .trim();
+    }
+
+    private Map<Integer, String> parseMarkedTranslations(String text) {
+        Map<Integer, String> map = new HashMap<>();
+        if (text == null || text.trim().isEmpty()) return map;
+
+        Pattern marker = Pattern.compile("\\[(\\d{3})\\]");
+        Matcher matcher = marker.matcher(text);
+
+        ArrayList<Integer> ids = new ArrayList<>();
+        ArrayList<Integer> markerStarts = new ArrayList<>();
+        ArrayList<Integer> contentStarts = new ArrayList<>();
+
+        while (matcher.find()) {
+            ids.add(Integer.parseInt(matcher.group(1)));
+            markerStarts.add(matcher.start());
+            contentStarts.add(matcher.end());
+        }
+
+        for (int i = 0; i < ids.size(); i++) {
+            int start = contentStarts.get(i);
+            int end = (i + 1 < markerStarts.size()) ? markerStarts.get(i + 1) : text.length();
+
+            String value = text.substring(start, end)
+                    .replaceAll("\\s+", " ")
+                    .trim();
+
+            map.put(ids.get(i), value);
+        }
+
+        return map;
     }
 
     private String fetchLyrics(String artist, String song) throws Exception {
