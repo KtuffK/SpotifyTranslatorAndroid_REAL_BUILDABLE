@@ -683,25 +683,75 @@ public class MainActivity extends Activity {
     private void assignMissingSectionLabels(ArrayList<LyricSection> sections) {
         if (sections == null || sections.isEmpty()) return;
 
-        String[] requiredOrder = new String[]{
-                "INTRO",
-                "VERSE 1",
-                "CHORUS",
-                "VERSE 2",
-                "CHORUS",
-                "BRIDGE",
-                "VERSE 3"
-        };
+        HashMap<String, Integer> repeatCounts = new HashMap<>();
+        HashMap<String, Integer> firstSeen = new HashMap<>();
+
+        for (int i = 0; i < sections.size(); i++) {
+            LyricSection section = sections.get(i);
+            String key = normalizeSectionKey(section);
+            if (key.isEmpty()) continue;
+
+            repeatCounts.put(key, repeatCounts.getOrDefault(key, 0) + 1);
+            if (!firstSeen.containsKey(key)) firstSeen.put(key, i);
+        }
+
+        String chorusKey = "";
+        int bestRepeatCount = 1;
+        int bestLineCount = 0;
+
+        for (String key : repeatCounts.keySet()) {
+            int count = repeatCounts.getOrDefault(key, 0);
+            if (count < 2) continue;
+
+            int firstIndex = firstSeen.getOrDefault(key, -1);
+            if (firstIndex < 0) continue;
+
+            int lineCount = sections.get(firstIndex).lines.size();
+
+            if (count > bestRepeatCount || (count == bestRepeatCount && lineCount > bestLineCount)) {
+                chorusKey = key;
+                bestRepeatCount = count;
+                bestLineCount = lineCount;
+            }
+        }
+
+        int verseNo = 1;
+        int bridgeNo = 1;
+        boolean chorusSeen = false;
+        boolean bridgeUsed = false;
 
         for (int i = 0; i < sections.size(); i++) {
             LyricSection section = sections.get(i);
             if (section == null) continue;
 
-            if (i < requiredOrder.length) {
-                section.label = requiredOrder[i];
-            } else {
-                section.label = "SECTION " + (i + 1);
+            String explicit = section.label == null ? "" : section.label.trim().toUpperCase();
+            String key = normalizeSectionKey(section);
+
+            if (!explicit.isEmpty()) {
+                section.label = explicit;
+                if (explicit.contains("CHORUS")) chorusSeen = true;
+                continue;
             }
+
+            if (!chorusKey.isEmpty() && chorusKey.equals(key)) {
+                section.label = "CHORUS";
+                chorusSeen = true;
+                continue;
+            }
+
+            if (i == 0 && section.lines.size() <= 2 && sections.size() > 1) {
+                section.label = "INTRO";
+                continue;
+            }
+
+            if (chorusSeen && !bridgeUsed && i < sections.size() - 1 && section.lines.size() <= 4) {
+                section.label = bridgeNo == 1 ? "BRIDGE" : "BRIDGE " + bridgeNo;
+                bridgeNo++;
+                bridgeUsed = true;
+                continue;
+            }
+
+            section.label = "VERSE " + verseNo++;
         }
     }
 
