@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -175,11 +176,40 @@ public class MainActivity extends Activity {
     }
 
     private Button button(String text) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setAllCaps(false);
-        return b;
-    }
+    Button b = new Button(this);
+
+    b.setText(text);
+    b.setAllCaps(false);
+    b.setTextColor(Color.WHITE);
+    b.setTextSize(16);
+
+    int screenWidth = getResources().getDisplayMetrics().widthPixels;
+
+    LinearLayout.LayoutParams params =
+            new LinearLayout.LayoutParams(
+                    (int)(screenWidth * 0.50f),
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+            );
+
+    params.gravity = Gravity.CENTER_HORIZONTAL;
+    params.topMargin = 12;
+    params.bottomMargin = 12;
+
+    b.setLayoutParams(params);
+
+    GradientDrawable bg = new GradientDrawable();
+    bg.setColor(Color.rgb(30, 185, 84));
+    bg.setCornerRadius(9999f);
+
+    b.setBackground(bg);
+
+    int padH = (int)(16 * getResources().getDisplayMetrics().density);
+    int padV = (int)(10 * getResources().getDisplayMetrics().density);
+
+    b.setPadding(padH, padV, padH, padV);
+
+    return b;
+}
 
     private TextView label(String s) {
         TextView t = new TextView(this);
