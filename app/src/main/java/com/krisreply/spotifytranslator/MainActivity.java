@@ -478,19 +478,19 @@ public class MainActivity extends Activity {
         String cleanLyrics = normalizeNewlines(lyrics);
         if (cleanLyrics.isEmpty()) throw new Exception("No lyrics to display.");
 
-        ArrayList<ArrayList<String>> blocks = splitLyricBlocks(cleanLyrics);
+        ArrayList<LyricSection> sections = parseLyricSections(cleanLyrics);
 
         StringBuilder markedLyrics = new StringBuilder();
         HashMap<String, Integer> lineIds = new HashMap<>();
         int id = 0;
 
-        for (int b = 0; b < blocks.size(); b++) {
-            ArrayList<String> block = blocks.get(b);
-            for (int l = 0; l < block.size(); l++) {
-                String line = stripSectionTag(block.get(l)).trim();
+        for (int sIdx = 0; sIdx < sections.size(); sIdx++) {
+            LyricSection section = sections.get(sIdx);
+            for (int lIdx = 0; lIdx < section.lines.size(); lIdx++) {
+                String line = section.lines.get(lIdx).trim();
                 if (line.isEmpty()) continue;
 
-                lineIds.put(b + ":" + l, id);
+                lineIds.put(sIdx + ":" + lIdx, id);
                 markedLyrics.append("[")
                         .append(String.format("%03d", id))
                         .append("] ")
@@ -503,17 +503,6 @@ public class MainActivity extends Activity {
         String translatedMarked = normalizeNewlines(translateLongText(markedLyrics.toString(), sourceLang, targetLang));
         Map<Integer, String> translatedMap = parseMarkedTranslations(translatedMarked);
 
-        HashMap<String, Integer> repeatCounts = new HashMap<>();
-        for (ArrayList<String> block : blocks) {
-            String key = normalizeBlockKey(block);
-            if (!key.isEmpty()) repeatCounts.put(key, repeatCounts.getOrDefault(key, 0) + 1);
-        }
-
-        HashMap<String, String> repeatLabels = new HashMap<>();
-        int verseNo = 1;
-        int chorusNo = 1;
-        int sectionNo = 1;
-
         StringBuilder out = new StringBuilder();
         ArrayList<int[]> headerRanges = new ArrayList<>();
         ArrayList<int[]> lyricRanges = new ArrayList<>();
@@ -524,46 +513,29 @@ public class MainActivity extends Activity {
                 .append(artist).append(" - ").append(translatedTrack).append("\n\n")
                 .append("LYRICS + TRANSLATION (").append(sourceLang.toUpperCase()).append(" to ").append(targetName).append(")\n");
 
-        for (int b = 0; b < blocks.size(); b++) {
-            ArrayList<String> block = blocks.get(b);
-            if (block.isEmpty()) continue;
-
-            String explicit = explicitSectionLabel(block);
-            String key = normalizeBlockKey(block);
-            String label;
-
-            if (!explicit.isEmpty()) {
-                label = explicit;
-            } else if (!key.isEmpty() && repeatCounts.getOrDefault(key, 0) > 1) {
-                if (!repeatLabels.containsKey(key)) repeatLabels.put(key, "CHORUS " + chorusNo++);
-                label = repeatLabels.get(key);
-            } else {
-                label = "VERSE " + verseNo++;
-            }
-
-            if (blocks.size() == 1 && explicit.isEmpty()) {
-                label = "LYRICS";
-            }
+        for (int sIdx = 0; sIdx < sections.size(); sIdx++) {
+            LyricSection section = sections.get(sIdx);
+            if (section.lines.isEmpty()) continue;
 
             int headerStart = out.length();
             out.append("\n\n")
-                    .append(label)
+                    .append(section.label)
                     .append("\n")
                     .append("────────────────────")
                     .append("\n\n");
             headerRanges.add(new int[]{headerStart, out.length()});
 
-            for (int l = 0; l < block.size(); l++) {
-                String lyricLine = stripSectionTag(block.get(l)).trim();
+            for (int lIdx = 0; lIdx < section.lines.size(); lIdx++) {
+                String lyricLine = section.lines.get(lIdx).trim();
                 if (lyricLine.isEmpty()) continue;
 
                 int lyricStart = out.length();
                 out.append(lyricLine).append("\n");
                 lyricRanges.add(new int[]{lyricStart, lyricStart + lyricLine.length()});
 
-                Integer lineId = lineIds.get(b + ":" + l);
+                Integer lineId = lineIds.get(sIdx + ":" + lIdx);
                 String translatedLine = lineId == null ? "" : translatedMap.getOrDefault(lineId, "");
-                translatedLine = stripSectionTag(translatedLine).trim();
+                translatedLine = translatedLine.trim();
 
                 int translationStart = out.length();
                 out.append(translatedLine).append("\n\n");
@@ -574,86 +546,82 @@ public class MainActivity extends Activity {
         SpannableString span = new SpannableString(out.toString().trim());
 
         for (int[] range : headerRanges) {
-            if (range[1] > range[0]) {
-                span.setSpan(new ForegroundColorSpan(Color.rgb(255, 215, 0)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
+            if (range[1] > range[0]) span.setSpan(new ForegroundColorSpan(Color.rgb(255, 215, 0)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
 
         for (int[] range : lyricRanges) {
-            if (range[1] > range[0]) {
-                span.setSpan(new ForegroundColorSpan(Color.rgb(30, 144, 255)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
+            if (range[1] > range[0]) span.setSpan(new ForegroundColorSpan(Color.rgb(30, 144, 255)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
 
         for (int[] range : translationRanges) {
-            if (range[1] > range[0]) {
-                span.setSpan(new ForegroundColorSpan(Color.rgb(50, 255, 90)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
+            if (range[1] > range[0]) span.setSpan(new ForegroundColorSpan(Color.rgb(50, 255, 90)), range[0], range[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
 
         return span;
     }
 
-    private ArrayList<ArrayList<String>> splitLyricBlocks(String lyrics) {
-        ArrayList<ArrayList<String>> blocks = new ArrayList<>();
-        ArrayList<String> current = new ArrayList<>();
+    private static class LyricSection {
+        String label;
+        ArrayList<String> lines = new ArrayList<>();
+
+        LyricSection(String label) {
+            this.label = label;
+        }
+    }
+
+    private ArrayList<LyricSection> parseLyricSections(String lyrics) {
+        ArrayList<LyricSection> sections = new ArrayList<>();
+        LyricSection current = null;
+        int sectionNumber = 1;
 
         for (String raw : lyrics.split("\\n", -1)) {
             String line = raw == null ? "" : raw.trim();
 
             if (line.isEmpty()) {
-                if (!current.isEmpty()) {
-                    blocks.add(current);
-                    current = new ArrayList<>();
+                if (current != null && !current.lines.isEmpty()) {
+                    sections.add(current);
+                    current = null;
                 }
-            } else {
-                current.add(line);
+                continue;
             }
+
+            if (isSectionTag(line)) {
+                if (current != null && !current.lines.isEmpty()) {
+                    sections.add(current);
+                }
+                current = new LyricSection(cleanSectionLabel(line));
+                continue;
+            }
+
+            if (current == null) {
+                current = new LyricSection("SECTION " + sectionNumber);
+                sectionNumber++;
+            }
+
+            current.lines.add(line);
         }
 
-        if (!current.isEmpty()) blocks.add(current);
-        return blocks;
-    }
-
-    private String explicitSectionLabel(ArrayList<String> block) {
-        if (block == null || block.isEmpty()) return "";
-
-        String first = block.get(0) == null ? "" : block.get(0).trim();
-        String lower = first.toLowerCase();
-
-        if (!first.startsWith("[") || !first.contains("]")) return "";
-
-        if (lower.contains("pre-chorus") || lower.contains("pre chorus")) return "PRE-CHORUS";
-        if (lower.contains("chorus")) return "CHORUS";
-        if (lower.contains("bridge")) return "BRIDGE";
-        if (lower.contains("verse")) return "VERSE";
-        if (lower.contains("intro")) return "INTRO";
-        if (lower.contains("outro")) return "OUTRO";
-        if (lower.contains("hook")) return "HOOK";
-
-        return "";
-    }
-
-    private String stripSectionTag(String line) {
-        if (line == null) return "";
-        return line.replaceFirst("^\\s*\\[[^\\]]+\\]\\s*", "").trim();
-    }
-
-    private String normalizeBlockKey(ArrayList<String> block) {
-        if (block == null) return "";
-
-        StringBuilder sb = new StringBuilder();
-
-        for (String line : block) {
-            String cleaned = stripSectionTag(line)
-                    .toLowerCase()
-                    .replaceAll("[^\\p{L}\\p{N}]+", "")
-                    .trim();
-
-            if (!cleaned.isEmpty()) sb.append(cleaned).append("|");
+        if (current != null && !current.lines.isEmpty()) {
+            sections.add(current);
         }
 
-        return sb.toString();
+        if (sections.size() == 1 && sections.get(0).label.startsWith("SECTION ")) {
+            sections.get(0).label = "LYRICS";
+        }
+
+        return sections;
+    }
+
+    private boolean isSectionTag(String line) {
+        if (line == null) return false;
+        String lower = line.trim().toLowerCase();
+        return lower.matches("^\\[(verse|chorus|pre-chorus|pre chorus|bridge|intro|outro|hook|refrain|post-chorus|post chorus)[^\\]]*\\]$");
+    }
+
+    private String cleanSectionLabel(String tag) {
+        String cleaned = tag == null ? "" : tag.replace("[", "").replace("]", "").trim();
+        if (cleaned.isEmpty()) return "SECTION";
+        return cleaned.toUpperCase();
     }
 
     private String normalizeNewlines(String text) {
@@ -724,16 +692,20 @@ public class MainActivity extends Activity {
         for (int i = 0; i < arr.length(); i++) {
             JSONObject obj = arr.getJSONObject(i);
 
-            String plain = obj.optString("plainLyrics", "").trim();
-            if (!plain.isEmpty() && !"null".equalsIgnoreCase(plain)) return plain;
-
             String synced = obj.optString("syncedLyrics", "").trim();
             if (!synced.isEmpty() && !"null".equalsIgnoreCase(synced)) {
                 currentSyncedLyrics = synced;
                 return synced
                         .replaceAll("\\[[0-9]{1,2}:[0-9]{2}(\\.[0-9]{1,3})?\\]", "")
                         .replaceAll("\\[[a-zA-Z]+:.*?\\]", "")
+                        .replaceAll("(?m)^\\s*$\\n?", "")
                         .trim();
+            }
+
+            String plain = obj.optString("plainLyrics", "").trim();
+            if (!plain.isEmpty() && !"null".equalsIgnoreCase(plain)) {
+                currentSyncedLyrics = "";
+                return plain;
             }
         }
 
