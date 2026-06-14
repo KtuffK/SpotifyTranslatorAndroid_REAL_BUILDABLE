@@ -1,5 +1,13 @@
+import java.util.Properties
+
 plugins {
     id "com.android.application"
+}
+
+def localProps = new Properties()
+def localPropsFile = rootProject.file("local.properties")
+if (localPropsFile.exists()) {
+    localPropsFile.withInputStream { localProps.load(it) }
 }
 
 def autoVersionCode = 2000
@@ -8,6 +16,10 @@ if (System.getenv("GITHUB_RUN_NUMBER") != null) {
 }
 
 android {
+    buildFeatures {
+        buildConfig true
+    }
+
     namespace "com.krisreply.spotifytranslator"
     compileSdk 35
 
@@ -17,6 +29,8 @@ android {
         targetSdk 35
         versionCode autoVersionCode
         versionName "1.1.0"
+        buildConfigField "String", "GENIUS_ACCESS_TOKEN", "\"" + localProps.getProperty("GENIUS_ACCESS_TOKEN", "") + "\""
+        buildConfigField "String", "MUSIXMATCH_API_KEY", "\"" + localProps.getProperty("MUSIXMATCH_API_KEY", "") + "\""
     }
 
     signingConfigs {

@@ -608,7 +608,7 @@ public class MainActivity extends Activity {
         ArrayList<LyricSection> sections = parseTimedLyricSections(syncedLyrics);
         if (sections.size() <= 1) sections = parseTextLyricSections(lyrics);
         assignMissingSectionLabels(sections);
-        if (sections.size() == 1) sections.get(0).label = "LYRICS";
+        if (sections.size() == 1) sections.get(0).label = "VERSE 1";
         return sections;
     }
 
@@ -709,57 +709,47 @@ public class MainActivity extends Activity {
         int bestCount = 1;
         int bestLines = 0;
 
-        for (int g = 0; g < groupCount; g++) {
+        for (int gIdx = 0; gIdx < groupCount; gIdx++) {
             int count = 0;
             int maxLines = 0;
 
             for (int i = 0; i < n; i++) {
-                if (group[i] == g) {
+                if (group[i] == gIdx) {
                     count++;
                     maxLines = Math.max(maxLines, sections.get(i).lines.size());
                 }
             }
 
             if (count >= 2 && maxLines >= 2 && (count > bestCount || (count == bestCount && maxLines > bestLines))) {
-                chorusGroup = g;
+                chorusGroup = gIdx;
                 bestCount = count;
                 bestLines = maxLines;
             }
         }
 
         int verseNo = 1;
-        boolean chorusSeen = false;
-        boolean bridgeUsed = false;
 
         for (int i = 0; i < n; i++) {
             LyricSection section = sections.get(i);
             if (section == null) continue;
 
             String explicit = section.label == null ? "" : section.label.trim().toUpperCase();
-            if (!explicit.isEmpty()) {
-                section.label = explicit;
-                if (explicit.contains("CHORUS")) chorusSeen = true;
+
+            if (explicit.contains("CHORUS") || explicit.contains("HOOK") || explicit.contains("REFRAIN")) {
+                section.label = "CHORUS";
+                continue;
+            }
+
+            if (explicit.contains("VERSE")) {
+                section.label = "VERSE " + verseNo++;
                 continue;
             }
 
             if (chorusGroup >= 0 && group[i] == chorusGroup) {
                 section.label = "CHORUS";
-                chorusSeen = true;
-                continue;
+            } else {
+                section.label = "VERSE " + verseNo++;
             }
-
-            if (i == 0 && section.lines.size() <= 2 && n > 1) {
-                section.label = "INTRO";
-                continue;
-            }
-
-            if (chorusSeen && !bridgeUsed && i < n - 1 && section.lines.size() <= 4) {
-                section.label = "BRIDGE";
-                bridgeUsed = true;
-                continue;
-            }
-
-            section.label = "VERSE " + verseNo++;
         }
     }
 
@@ -883,6 +873,16 @@ public class MainActivity extends Activity {
 
         for (String title : tries) {
             try {
+                String lyrics = fetchMusixmatchStructuredLyrics(artist, title);
+                if (!lyrics.trim().isEmpty()) return lyrics;
+            } catch (Exception ignored) {}
+
+            try {
+                String lyrics = fetchGeniusSearchMetadata(artist, title);
+                if (!lyrics.trim().isEmpty()) return lyrics;
+            } catch (Exception ignored) {}
+
+            try {
                 String lyrics = fetchLrcLibSearch(artist, title);
                 if (!lyrics.trim().isEmpty()) return lyrics;
             } catch (Exception ignored) {}
@@ -894,6 +894,87 @@ public class MainActivity extends Activity {
         }
 
         throw new Exception("No free lyrics source found. Paste lyrics manually below.");
+    }
+
+    private String fetchMusixmatchStructuredLyrics(String artist, String song) throws Exception {
+        String key = BuildConfig.MUSIXMATCH_API_KEY;
+        if (key == null || key.trim().isEmpty()) {
+            throw new Exception("Musixmatch API key not configured.");
+        }
+
+        String url = "https://api.musixmatch.com/ws/1.1/matcher.lyrics.get?q_artist="
+                + enc(artist)
+                + "&q_track="
+                + enc(song)
+                + "&apikey="
+                + enc(key);
+
+        JSONObject root = new JSONObject(httpGet(url));
+        JSONObject message = root.optJSONObject("message");
+        if (message == null) throw new Exception("No Musixmatch message.");
+
+        JSONObject body = message.optJSONObject("body");
+        if (body == null) throw new Exception("No Musixmatch body.");
+
+        JSONObject lyrics = body.optJSONObject("lyrics");
+        if (lyrics == null) throw new Exception("No Musixmatch lyrics.");
+
+        String text = lyrics.optString("lyrics_body", "").trim();
+        if (text.isEmpty()) throw new Exception("No Musixmatch lyrics body.");
+
+        text = text.replaceAll("(?is)\\*\\*\\*.*", "").trim();
+
+        if (!textContainsSectionTags(text)) {
+            throw new Exception("Musixmatch returned unstructured lyrics.");
+        }
+
+        currentSyncedLyrics = "";
+        return text;
+    }
+
+    private String fetchGeniusSearchMetadata(String artist, String song) throws Exception {
+        String token = BuildConfig.GENIUS_ACCESS_TOKEN;
+        if (token == null || token.trim().isEmpty()) {
+            throw new Exception("Genius token not configured.");
+        }
+
+        JSONObject search = new JSONObject(geniusGet("https://api.genius.com/search?q=" + enc(artist + " " + song)));
+        JSONObject response = search.optJSONObject("response");
+        if (response == null) throw new Exception("No Genius response.");
+
+        JSONArray hits = response.optJSONArray("hits");
+        if (hits == null || hits.length() == 0) throw new Exception("No Genius hits.");
+
+        // Genius API confirms the song but does not reliably provide lyrics text.
+        // Return empty so LRCLIB remains the practical lyrics source.
+        throw new Exception("Genius metadata found, but Genius API does not provide structured lyrics.");
+    }
+
+    private String geniusGet(String urlText) throws Exception {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(urlText).openConnection();
+            conn.setConnectTimeout(20000);
+            conn.setReadTimeout(30000);
+            conn.setRequestProperty("Authorization", "Bearer " + BuildConfig.GENIUS_ACCESS_TOKEN);
+            conn.setRequestProperty("User-Agent", "SpotifyTranslatorAndroid/0.4");
+            int code = conn.getResponseCode();
+            String body = readAll(code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream());
+            if (code < 200 || code >= 300) throw new Exception("Genius HTTP " + code + ": " + body);
+            return body;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private boolean textContainsSectionTags(String text) {
+        if (text == null) return false;
+
+        for (String line : normalizeNewlines(text).split("\\n")) {
+            if (isSectionTag(line.trim())) return true;
+        }
+
+        return false;
     }
 
     private String fetchLrcLibSearch(String artist, String song) throws Exception {
