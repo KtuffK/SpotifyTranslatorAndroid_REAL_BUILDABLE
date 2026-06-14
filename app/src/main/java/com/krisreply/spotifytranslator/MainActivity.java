@@ -681,36 +681,26 @@ public class MainActivity extends Activity {
     }
 
     private void assignMissingSectionLabels(ArrayList<LyricSection> sections) {
-        HashMap<String, Integer> repeatCounts = new HashMap<>();
+        if (sections == null || sections.isEmpty()) return;
 
-        for (LyricSection section : sections) {
-            String key = normalizeSectionKey(section);
-            if (!key.isEmpty()) repeatCounts.put(key, repeatCounts.getOrDefault(key, 0) + 1);
-        }
+        String[] requiredOrder = new String[]{
+                "INTRO",
+                "VERSE 1",
+                "CHORUS",
+                "VERSE 2",
+                "CHORUS",
+                "BRIDGE",
+                "VERSE 3"
+        };
 
-        HashMap<String, String> repeatedLabels = new HashMap<>();
-        int verseNo = 1;
-        int chorusNo = 1;
-        int bridgeNo = 1;
-        int sectionNo = 1;
+        for (int i = 0; i < sections.size(); i++) {
+            LyricSection section = sections.get(i);
+            if (section == null) continue;
 
-        for (LyricSection section : sections) {
-            if (section.label != null && !section.label.trim().isEmpty()) continue;
-
-            String key = normalizeSectionKey(section);
-
-            if (!key.isEmpty() && repeatCounts.getOrDefault(key, 0) > 1) {
-                if (!repeatedLabels.containsKey(key)) repeatedLabels.put(key, "CHORUS " + chorusNo++);
-                section.label = repeatedLabels.get(key);
-            } else if (section.lines.size() <= 2 && sections.size() > 2) {
-                section.label = bridgeNo == 1 ? "BRIDGE" : "BRIDGE " + bridgeNo;
-                bridgeNo++;
+            if (i < requiredOrder.length) {
+                section.label = requiredOrder[i];
             } else {
-                section.label = "VERSE " + verseNo++;
-            }
-
-            if (section.label == null || section.label.trim().isEmpty()) {
-                section.label = "SECTION " + sectionNo++;
+                section.label = "SECTION " + (i + 1);
             }
         }
     }
