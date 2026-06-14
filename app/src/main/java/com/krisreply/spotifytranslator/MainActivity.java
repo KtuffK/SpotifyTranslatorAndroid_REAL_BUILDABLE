@@ -112,14 +112,15 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(34, 44, 34, 34);
+        root.setPadding(34, 44 + dpToPx(38), 34, 0);
         root.setBackgroundColor(Color.rgb(18, 18, 18));
         scroll.addView(root);
 
         TextView title = label("Spotify Translator");
         title.setTextColor(Color.rgb(30, 185, 84));
-        title.setTextSize(28);
+        title.setTextSize(32);
         title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setShadowLayer(20f, 0f, 0f, Color.rgb(30, 185, 84));
         title.setGravity(Gravity.CENTER_HORIZONTAL);
         title.setPadding(0, 0, 0, 22);
         root.addView(title);
@@ -169,10 +170,14 @@ public class MainActivity extends Activity {
         outputText.setTextIsSelectable(true);
         outputText.setTextColor(Color.WHITE);
         outputText.setTextSize(15);
-        outputText.setPadding(0, 12, 0, 80);
+        outputText.setPadding(0, 12, 0, 0);
         root.addView(outputText);
 
         setContentView(scroll);
+    }
+
+    private int dpToPx(int dp) {
+        return Math.round(dp * getResources().getDisplayMetrics().density);
     }
 
     private Button button(String text) {
