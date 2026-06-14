@@ -478,7 +478,7 @@ public class MainActivity extends Activity {
         String cleanLyrics = normalizeNewlines(lyrics);
         if (cleanLyrics.isEmpty()) throw new Exception("No lyrics to display.");
 
-        ArrayList<LyricSection> sections = parseLyricSections(cleanLyrics);
+        ArrayList<LyricSection> sections = parseLyricSections(cleanLyrics, currentSyncedLyrics);
 
         StringBuilder markedLyrics = new StringBuilder();
         HashMap<String, Integer> lineIds = new HashMap<>();
@@ -569,12 +569,58 @@ public class MainActivity extends Activity {
         }
     }
 
-    private ArrayList<LyricSection> parseLyricSections(String lyrics) {
+    private ArrayList<LyricSection> parseLyricSections(String lyrics, String syncedLyrics) {
+        ArrayList<LyricSection> sections = parseTimedLyricSections(syncedLyrics);
+        if (sections.size() <= 1) sections = parseTextLyricSections(lyrics);
+        assignMissingSectionLabels(sections);
+        if (sections.size() == 1) sections.get(0).label = "LYRICS";
+        return sections;
+    }
+
+    private ArrayList<LyricSection> parseTimedLyricSections(String syncedLyrics) {
+        ArrayList<LyricSection> sections = new ArrayList<>();
+        if (syncedLyrics == null || syncedLyrics.trim().isEmpty()) return sections;
+
+        LyricSection current = new LyricSection("");
+        int previousMs = -1;
+
+        for (String raw : syncedLyrics.split("\\n")) {
+            String line = raw == null ? "" : raw.trim();
+            if (!line.startsWith("[")) continue;
+
+            int close = line.indexOf("]");
+            if (close <= 0) continue;
+
+            int ms = parseLrcTimeMs(line.substring(1, close));
+            String text = line.substring(close + 1).trim();
+
+            if (text.isEmpty()) {
+                if (!current.lines.isEmpty()) {
+                    sections.add(current);
+                    current = new LyricSection("");
+                }
+                previousMs = ms;
+                continue;
+            }
+
+            if (previousMs >= 0 && ms - previousMs >= 4500 && !current.lines.isEmpty()) {
+                sections.add(current);
+                current = new LyricSection("");
+            }
+
+            current.lines.add(stripSectionTag(text));
+            previousMs = ms;
+        }
+
+        if (!current.lines.isEmpty()) sections.add(current);
+        return sections;
+    }
+
+    private ArrayList<LyricSection> parseTextLyricSections(String lyrics) {
         ArrayList<LyricSection> sections = new ArrayList<>();
         LyricSection current = null;
-        int sectionNumber = 1;
 
-        for (String raw : lyrics.split("\\n", -1)) {
+        for (String raw : normalizeNewlines(lyrics).split("\\n", -1)) {
             String line = raw == null ? "" : raw.trim();
 
             if (line.isEmpty()) {
@@ -586,30 +632,52 @@ public class MainActivity extends Activity {
             }
 
             if (isSectionTag(line)) {
-                if (current != null && !current.lines.isEmpty()) {
-                    sections.add(current);
-                }
+                if (current != null && !current.lines.isEmpty()) sections.add(current);
                 current = new LyricSection(cleanSectionLabel(line));
                 continue;
             }
 
-            if (current == null) {
-                current = new LyricSection("SECTION " + sectionNumber);
-                sectionNumber++;
+            if (current == null) current = new LyricSection("");
+            current.lines.add(stripSectionTag(line));
+        }
+
+        if (current != null && !current.lines.isEmpty()) sections.add(current);
+        return sections;
+    }
+
+    private void assignMissingSectionLabels(ArrayList<LyricSection> sections) {
+        HashMap<String, Integer> repeatCounts = new HashMap<>();
+
+        for (LyricSection section : sections) {
+            String key = normalizeSectionKey(section);
+            if (!key.isEmpty()) repeatCounts.put(key, repeatCounts.getOrDefault(key, 0) + 1);
+        }
+
+        HashMap<String, String> repeatedLabels = new HashMap<>();
+        int verseNo = 1;
+        int chorusNo = 1;
+        int bridgeNo = 1;
+        int sectionNo = 1;
+
+        for (LyricSection section : sections) {
+            if (section.label != null && !section.label.trim().isEmpty()) continue;
+
+            String key = normalizeSectionKey(section);
+
+            if (!key.isEmpty() && repeatCounts.getOrDefault(key, 0) > 1) {
+                if (!repeatedLabels.containsKey(key)) repeatedLabels.put(key, "CHORUS " + chorusNo++);
+                section.label = repeatedLabels.get(key);
+            } else if (section.lines.size() <= 2 && sections.size() > 2) {
+                section.label = bridgeNo == 1 ? "BRIDGE" : "BRIDGE " + bridgeNo;
+                bridgeNo++;
+            } else {
+                section.label = "VERSE " + verseNo++;
             }
 
-            current.lines.add(line);
+            if (section.label == null || section.label.trim().isEmpty()) {
+                section.label = "SECTION " + sectionNo++;
+            }
         }
-
-        if (current != null && !current.lines.isEmpty()) {
-            sections.add(current);
-        }
-
-        if (sections.size() == 1 && sections.get(0).label.startsWith("SECTION ")) {
-            sections.get(0).label = "LYRICS";
-        }
-
-        return sections;
     }
 
     private boolean isSectionTag(String line) {
@@ -622,6 +690,27 @@ public class MainActivity extends Activity {
         String cleaned = tag == null ? "" : tag.replace("[", "").replace("]", "").trim();
         if (cleaned.isEmpty()) return "SECTION";
         return cleaned.toUpperCase();
+    }
+
+    private String normalizeSectionKey(LyricSection section) {
+        if (section == null) return "";
+        StringBuilder sb = new StringBuilder();
+
+        for (String line : section.lines) {
+            String cleaned = stripSectionTag(line)
+                    .toLowerCase()
+                    .replaceAll("[^\\p{L}\\p{N}]+", "")
+                    .trim();
+
+            if (!cleaned.isEmpty()) sb.append(cleaned).append("|");
+        }
+
+        return sb.toString();
+    }
+
+    private String stripSectionTag(String line) {
+        if (line == null) return "";
+        return line.replaceFirst("^\\s*\\[[^\\]]+\\]\\s*", "").trim();
     }
 
     private String normalizeNewlines(String text) {
