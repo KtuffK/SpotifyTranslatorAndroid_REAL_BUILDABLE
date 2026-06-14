@@ -683,35 +683,48 @@ public class MainActivity extends Activity {
     private void assignMissingSectionLabels(ArrayList<LyricSection> sections) {
         if (sections == null || sections.isEmpty()) return;
 
-        HashMap<String, Integer> repeatCounts = new HashMap<>();
-        HashMap<String, Integer> firstSeen = new HashMap<>();
+        int n = sections.size();
+        int[] cluster = new int[n];
 
-        for (int i = 0; i < sections.size(); i++) {
-            LyricSection section = sections.get(i);
-            String key = normalizeSectionKey(section);
-            if (key.isEmpty()) continue;
+        for (int i = 0; i < n; i++) cluster[i] = -1;
 
-            repeatCounts.put(key, repeatCounts.getOrDefault(key, 0) + 1);
-            if (!firstSeen.containsKey(key)) firstSeen.put(key, i);
+        int clusterCount = 0;
+
+        for (int i = 0; i < n; i++) {
+            if (sections.get(i) == null || normalizeSectionKey(sections.get(i)).isEmpty()) continue;
+
+            if (cluster[i] < 0) {
+                cluster[i] = clusterCount++;
+            }
+
+            for (int j = i + 1; j < n; j++) {
+                if (sections.get(j) == null || normalizeSectionKey(sections.get(j)).isEmpty()) continue;
+
+                if (sectionSimilarity(sections.get(i), sections.get(j)) >= 0.58f) {
+                    cluster[j] = cluster[i];
+                }
+            }
         }
 
-        String chorusKey = "";
-        int bestRepeatCount = 1;
-        int bestLineCount = 0;
+        int chorusCluster = -1;
+        int bestCount = 1;
+        int bestLines = 0;
 
-        for (String key : repeatCounts.keySet()) {
-            int count = repeatCounts.getOrDefault(key, 0);
-            if (count < 2) continue;
+        for (int c = 0; c < clusterCount; c++) {
+            int count = 0;
+            int maxLines = 0;
 
-            int firstIndex = firstSeen.getOrDefault(key, -1);
-            if (firstIndex < 0) continue;
+            for (int i = 0; i < n; i++) {
+                if (cluster[i] == c) {
+                    count++;
+                    maxLines = Math.max(maxLines, sections.get(i).lines.size());
+                }
+            }
 
-            int lineCount = sections.get(firstIndex).lines.size();
-
-            if (count > bestRepeatCount || (count == bestRepeatCount && lineCount > bestLineCount)) {
-                chorusKey = key;
-                bestRepeatCount = count;
-                bestLineCount = lineCount;
+            if (count >= 2 && (count > bestCount || (count == bestCount && maxLines > bestLines))) {
+                chorusCluster = c;
+                bestCount = count;
+                bestLines = maxLines;
             }
         }
 
@@ -720,12 +733,11 @@ public class MainActivity extends Activity {
         boolean chorusSeen = false;
         boolean bridgeUsed = false;
 
-        for (int i = 0; i < sections.size(); i++) {
+        for (int i = 0; i < n; i++) {
             LyricSection section = sections.get(i);
             if (section == null) continue;
 
             String explicit = section.label == null ? "" : section.label.trim().toUpperCase();
-            String key = normalizeSectionKey(section);
 
             if (!explicit.isEmpty()) {
                 section.label = explicit;
@@ -733,18 +745,29 @@ public class MainActivity extends Activity {
                 continue;
             }
 
-            if (!chorusKey.isEmpty() && chorusKey.equals(key)) {
+            if (chorusCluster >= 0 && cluster[i] == chorusCluster) {
                 section.label = "CHORUS";
                 chorusSeen = true;
                 continue;
             }
 
-            if (i == 0 && section.lines.size() <= 2 && sections.size() > 1) {
+            if (chorusCluster >= 0 && looksLikeChorusVariant(section, sections, cluster, chorusCluster)) {
+                section.label = "CHORUS";
+                chorusSeen = true;
+                continue;
+            }
+
+            if (i == 0 && section.lines.size() <= 2 && n > 1) {
                 section.label = "INTRO";
                 continue;
             }
 
-            if (chorusSeen && !bridgeUsed && i < sections.size() - 1 && section.lines.size() <= 4) {
+            if (i == n - 1 && chorusSeen && section.lines.size() <= 2) {
+                section.label = "OUTRO";
+                continue;
+            }
+
+            if (chorusSeen && !bridgeUsed && i < n - 1 && section.lines.size() <= 4) {
                 section.label = bridgeNo == 1 ? "BRIDGE" : "BRIDGE " + bridgeNo;
                 bridgeNo++;
                 bridgeUsed = true;
@@ -753,6 +776,59 @@ public class MainActivity extends Activity {
 
             section.label = "VERSE " + verseNo++;
         }
+    }
+
+    private boolean looksLikeChorusVariant(LyricSection section, ArrayList<LyricSection> sections, int[] cluster, int chorusCluster) {
+        if (section == null || sections == null || cluster == null) return false;
+
+        for (int i = 0; i < sections.size() && i < cluster.length; i++) {
+            if (cluster[i] == chorusCluster && sectionSimilarity(section, sections.get(i)) >= 0.42f) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private float sectionSimilarity(LyricSection a, LyricSection b) {
+        if (a == null || b == null) return 0f;
+
+        ArrayList<String> aa = normalizedSectionLines(a);
+        ArrayList<String> bb = normalizedSectionLines(b);
+
+        if (aa.isEmpty() || bb.isEmpty()) return 0f;
+
+        int matches = 0;
+
+        for (String x : aa) {
+            for (String y : bb) {
+                if (x.equals(y) || x.contains(y) || y.contains(x)) {
+                    matches++;
+                    break;
+                }
+            }
+        }
+
+        int max = Math.max(aa.size(), bb.size());
+        return max == 0 ? 0f : (float) matches / (float) max;
+    }
+
+    private ArrayList<String> normalizedSectionLines(LyricSection section) {
+        ArrayList<String> out = new ArrayList<>();
+        if (section == null) return out;
+
+        for (String line : section.lines) {
+            String cleaned = stripSectionTag(line)
+                    .toLowerCase()
+                    .replaceAll("[^\\p{L}\\p{N}]+", "")
+                    .trim();
+
+            if (!cleaned.isEmpty() && !out.contains(cleaned)) {
+                out.add(cleaned);
+            }
+        }
+
+        return out;
     }
 
     private boolean isSectionTag(String line) {
