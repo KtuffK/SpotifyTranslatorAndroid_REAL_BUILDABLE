@@ -683,21 +683,34 @@ public class MainActivity extends Activity {
     private void assignMissingSectionLabels(ArrayList<LyricSection> sections) {
         if (sections == null || sections.isEmpty()) return;
 
-        HashMap<String, Integer> lineCounts = new HashMap<>();
+        HashMap<String, Integer> blockCounts = new HashMap<>();
 
         for (LyricSection section : sections) {
-            if (section == null) continue;
+            String key = normalizeSectionKey(section);
+            if (!key.isEmpty()) {
+                blockCounts.put(key, blockCounts.getOrDefault(key, 0) + 1);
+            }
+        }
 
-            for (String rawLine : section.lines) {
-                String key = normalizeLyricLine(rawLine);
-                if (key.length() >= 6) {
-                    lineCounts.put(key, lineCounts.getOrDefault(key, 0) + 1);
-                }
+        String chorusKey = "";
+        int bestCount = 1;
+        int bestLines = 0;
+
+        for (LyricSection section : sections) {
+            String key = normalizeSectionKey(section);
+            if (key.isEmpty()) continue;
+
+            int count = blockCounts.getOrDefault(key, 0);
+            int lines = section.lines.size();
+
+            if (count >= 2 && (count > bestCount || (count == bestCount && lines > bestLines))) {
+                chorusKey = key;
+                bestCount = count;
+                bestLines = lines;
             }
         }
 
         int verseNo = 1;
-        int bridgeNo = 1;
         boolean chorusSeen = false;
         boolean bridgeUsed = false;
 
@@ -706,14 +719,15 @@ public class MainActivity extends Activity {
             if (section == null) continue;
 
             String explicit = section.label == null ? "" : section.label.trim().toUpperCase();
-
             if (!explicit.isEmpty()) {
                 section.label = explicit;
                 if (explicit.contains("CHORUS")) chorusSeen = true;
                 continue;
             }
 
-            if (sectionHasRepeatedHookLines(section, lineCounts)) {
+            String key = normalizeSectionKey(section);
+
+            if (!chorusKey.isEmpty() && chorusKey.equals(key)) {
                 section.label = "CHORUS";
                 chorusSeen = true;
                 continue;
@@ -724,51 +738,14 @@ public class MainActivity extends Activity {
                 continue;
             }
 
-            if (i == sections.size() - 1 && chorusSeen && section.lines.size() <= 2) {
-                section.label = "OUTRO";
-                continue;
-            }
-
             if (chorusSeen && !bridgeUsed && i < sections.size() - 1 && section.lines.size() <= 4) {
-                section.label = bridgeNo == 1 ? "BRIDGE" : "BRIDGE " + bridgeNo;
-                bridgeNo++;
+                section.label = "BRIDGE";
                 bridgeUsed = true;
                 continue;
             }
 
             section.label = "VERSE " + verseNo++;
         }
-    }
-
-    private boolean sectionHasRepeatedHookLines(LyricSection section, HashMap<String, Integer> lineCounts) {
-        if (section == null || lineCounts == null) return false;
-
-        int repeated = 0;
-        int meaningful = 0;
-
-        for (String rawLine : section.lines) {
-            String key = normalizeLyricLine(rawLine);
-            if (key.length() < 6) continue;
-
-            meaningful++;
-
-            if (lineCounts.getOrDefault(key, 0) >= 2) {
-                repeated++;
-            }
-        }
-
-        if (meaningful == 0) return false;
-
-        return repeated >= 2 || (meaningful <= 3 && repeated >= 1);
-    }
-
-    private String normalizeLyricLine(String line) {
-        if (line == null) return "";
-
-        return stripSectionTag(line)
-                .toLowerCase()
-                .replaceAll("[^\\p{L}\\p{N}]+", "")
-                .trim();
     }
 
     private boolean isSectionTag(String line) {
