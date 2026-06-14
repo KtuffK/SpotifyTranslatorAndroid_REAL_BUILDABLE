@@ -127,11 +127,11 @@ public class MainActivity extends Activity {
         loginText.setTextColor(Color.LTGRAY);
         root.addView(loginText);
 
-        Button loginButton = button("Login with Spotify");
+        Button loginButton = button("Connect");
         loginButton.setOnClickListener(v -> startSpotifyLogin());
         root.addView(loginButton);
 
-        Button notifButton = button("Use Spotify notification fallback");
+        Button notifButton = button("Scan Playing Song");
         notifButton.setOnClickListener(v -> useSpotifyNotificationFallback());
         root.addView(notifButton);
 
@@ -151,7 +151,7 @@ public class MainActivity extends Activity {
         languageSpinner.setPadding(18, 10, 18, 10);
         root.addView(languageSpinner);
 
-        Button manualButton = button("Manual fetch lyrics + translate");
+        Button manualButton = button("Lyrics");
         manualButton.setOnClickListener(v -> fetchAndTranslateFromFields());
         root.addView(manualButton);
 
